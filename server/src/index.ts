@@ -165,6 +165,120 @@ app.post('/api/reports', requireAuth, (req, res) => {
   res.status(201).json({ report: row })
 })
 
+
+const invoiceSchema = z.object({
+  childId: z.string().min(1),
+  amountCents: z.number().int().positive(),
+  currency: z.string().min(1).default('EUR'),
+  periodLabel: z.string().min(1),
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  notes: z.string().optional(),
+})
+
+app.get('/api/invoices', requireAuth, (req, res) => {
+  const user = authed(req)
+  let sql = `
+    SELECT i.id, i.child_id AS childId, c.name AS childName, c.group_name AS groupName,
+           i.amount_cents AS amountCents, i.currency, i.period_label AS periodLabel,
+           i.status, i.due_date AS dueDate, i.paid_at AS paidAt,
+           i.created_by AS createdBy, i.created_at AS createdAt, i.notes
+    FROM invoices i
+    JOIN children c ON c.id = i.child_id
+    WHERE 1=1
+  `
+  const params: string[] = []
+  if (user.role === 'parent') {
+    sql += ' AND c.parent_user_id = ?'
+    params.push(user.id)
+  }
+  sql += ' ORDER BY i.due_date DESC, c.name ASC LIMIT 100'
+  res.json({ invoices: db.prepare(sql).all(...params) })
+})
+
+app.post('/api/invoices', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'director' && user.role !== 'teacher') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+  const parsed = invoiceSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body' })
+  }
+  const body = parsed.data
+  const child = db.prepare('SELECT id FROM children WHERE id = ?').get(body.childId)
+  if (!child) return res.status(404).json({ error: 'child_not_found' })
+
+  const id = randomUUID()
+  const createdAt = new Date().toISOString()
+  db.prepare(
+    `INSERT INTO invoices (id, child_id, amount_cents, currency, period_label, status, due_date, paid_at, created_by, created_at, notes)
+     VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL, ?, ?, ?)`,
+  ).run(
+    id,
+    body.childId,
+    body.amountCents,
+    body.currency || 'EUR',
+    body.periodLabel,
+    body.dueDate,
+    user.id,
+    createdAt,
+    body.notes ?? null,
+  )
+
+  const row = db
+    .prepare(
+      `SELECT i.id, i.child_id AS childId, c.name AS childName, c.group_name AS groupName,
+              i.amount_cents AS amountCents, i.currency, i.period_label AS periodLabel,
+              i.status, i.due_date AS dueDate, i.paid_at AS paidAt,
+              i.created_by AS createdBy, i.created_at AS createdAt, i.notes
+       FROM invoices i
+       JOIN children c ON c.id = i.child_id
+       WHERE i.id = ?`,
+    )
+    .get(id)
+  res.status(201).json({ invoice: row })
+})
+
+app.patch('/api/invoices/:id/paid', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+  const id = req.params.id
+  const existing = db.prepare('SELECT id, status FROM invoices WHERE id = ?').get(id) as
+    | { id: string; status: string }
+    | undefined
+  if (!existing) return res.status(404).json({ error: 'not_found' })
+  if (existing.status === 'paid') {
+    const row = db
+      .prepare(
+        `SELECT i.id, i.child_id AS childId, c.name AS childName, c.group_name AS groupName,
+                i.amount_cents AS amountCents, i.currency, i.period_label AS periodLabel,
+                i.status, i.due_date AS dueDate, i.paid_at AS paidAt,
+                i.created_by AS createdBy, i.created_at AS createdAt, i.notes
+         FROM invoices i
+         JOIN children c ON c.id = i.child_id
+         WHERE i.id = ?`,
+      )
+      .get(id)
+    return res.json({ invoice: row })
+  }
+  const paidAt = new Date().toISOString()
+  db.prepare(`UPDATE invoices SET status = 'paid', paid_at = ? WHERE id = ?`).run(paidAt, id)
+  const row = db
+    .prepare(
+      `SELECT i.id, i.child_id AS childId, c.name AS childName, c.group_name AS groupName,
+              i.amount_cents AS amountCents, i.currency, i.period_label AS periodLabel,
+              i.status, i.due_date AS dueDate, i.paid_at AS paidAt,
+              i.created_by AS createdBy, i.created_at AS createdAt, i.notes
+       FROM invoices i
+       JOIN children c ON c.id = i.child_id
+       WHERE i.id = ?`,
+    )
+    .get(id)
+  res.json({ invoice: row })
+})
+
 app.listen(PORT, '127.0.0.1', () => {
   console.log(`Kidoland API on http://127.0.0.1:${PORT}`)
 })

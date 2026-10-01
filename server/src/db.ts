@@ -37,6 +37,20 @@ db.exec(`
     created_at TEXT NOT NULL,
     UNIQUE(child_id, report_date)
   );
+
+  CREATE TABLE IF NOT EXISTS invoices (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL REFERENCES children(id),
+    amount_cents INTEGER NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'EUR',
+    period_label TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('pending','paid')),
+    due_date TEXT NOT NULL,
+    paid_at TEXT,
+    created_by TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    notes TEXT
+  );
 `)
 
 export type DbUser = {
@@ -110,5 +124,58 @@ if (reportCount.c === 0) {
     'Outdoor play, painting, story time',
     'Arta shared toys kindly today. Great participation in circle time.',
     new Date().toISOString(),
+  )
+}
+
+const invoiceCount = db.prepare('SELECT COUNT(*) AS c FROM invoices').get() as { c: number }
+if (invoiceCount.c === 0) {
+  const now = new Date().toISOString()
+  db.prepare(
+    `INSERT INTO invoices (id, child_id, amount_cents, currency, period_label, status, due_date, paid_at, created_by, created_at, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'inv-arta-oct',
+    'c-arta',
+    18000,
+    'EUR',
+    'October 2026',
+    'pending',
+    '2026-10-05',
+    null,
+    'u-director',
+    now,
+    'Monthly tuition',
+  )
+  db.prepare(
+    `INSERT INTO invoices (id, child_id, amount_cents, currency, period_label, status, due_date, paid_at, created_by, created_at, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'inv-luan-sep',
+    'c-luan',
+    18000,
+    'EUR',
+    'September 2026',
+    'paid',
+    '2026-09-05',
+    '2026-09-03T10:00:00.000Z',
+    'u-director',
+    now,
+    'Monthly tuition',
+  )
+  db.prepare(
+    `INSERT INTO invoices (id, child_id, amount_cents, currency, period_label, status, due_date, paid_at, created_by, created_at, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'inv-luan-oct',
+    'c-luan',
+    18000,
+    'EUR',
+    'October 2026',
+    'pending',
+    '2026-10-05',
+    null,
+    'u-director',
+    now,
+    'Monthly tuition',
   )
 }

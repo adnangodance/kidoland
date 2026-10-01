@@ -1,5 +1,15 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { listChildren, listReports, saveReport, type Child, type Report } from './api'
+import {
+  listChildren,
+  listReports,
+  saveReport,
+  listInvoices,
+  createInvoice,
+  markInvoicePaid,
+  type Child,
+  type Report,
+  type Invoice,
+} from './api'
 import { AuthProvider, useAuth } from './auth'
 import { LanguageProvider, useI18n } from './i18n/LanguageContext'
 import './App.css'
@@ -413,24 +423,178 @@ function Reports() {
   )
 }
 
+function formatEur(cents: number) {
+  return `€${(cents / 100).toFixed(2)}`
+}
+
 function Payments() {
   const { t } = useI18n()
+  const { user, token } = useAuth()
+  const [children, setChildren] = useState<Child[]>([])
+  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [form, setForm] = useState({
+    childId: '',
+    amountEuros: '180',
+    periodLabel: 'October 2026',
+    dueDate: '2026-10-05',
+    notes: '',
+  })
+  const canCreate = user?.role === 'director' || user?.role === 'teacher'
+  const canMarkPaid = user?.role === 'director'
+
+  async function reload() {
+    if (!token) return
+    try {
+      const [c, inv] = await Promise.all([listChildren(token), listInvoices(token)])
+      setChildren(c.children)
+      setInvoices(inv.invoices)
+      setForm((f) => ({
+        ...f,
+        childId: f.childId || c.children[0]?.id || '',
+      }))
+      setError('')
+    } catch {
+      setError('api')
+    }
+  }
+
+  useEffect(() => {
+    void reload()
+  }, [token])
+
+  async function onCreate(e: FormEvent) {
+    e.preventDefault()
+    if (!token) return
+    const euros = Number(form.amountEuros)
+    if (!Number.isFinite(euros) || euros <= 0) {
+      setError('save')
+      return
+    }
+    setBusy(true)
+    try {
+      await createInvoice(token, {
+        childId: form.childId,
+        amountCents: Math.round(euros * 100),
+        periodLabel: form.periodLabel,
+        dueDate: form.dueDate,
+        notes: form.notes || undefined,
+      })
+      await reload()
+      setForm((f) => ({ ...f, notes: '' }))
+    } catch {
+      setError('save')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onMarkPaid(id: string) {
+    if (!token) return
+    setBusy(true)
+    try {
+      await markInvoicePaid(token, id)
+      await reload()
+    } catch {
+      setError('save')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <section className="panel">
       <h1>{t.paymentsTitle}</h1>
-      <div className="invoice">
-        <div>
-          <h3>{t.paymentsInvoice}</h3>
-          <p>{t.paymentsDue}</p>
-        </div>
-        <div className="invoice-right">
-          <strong>{t.paymentsAmount}</strong>
-          <span className="badge">{t.paymentsStatus}</span>
-        </div>
+      {error && <p className="form-error">{t.loginError}</p>}
+      {canCreate && (
+        <form className="login-form" onSubmit={onCreate}>
+          <label>
+            {t.paymentsChild}
+            <select
+              value={form.childId}
+              onChange={(e) => setForm({ ...form, childId: e.target.value })}
+              required
+            >
+              {children.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} · {c.groupName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {t.paymentsAmountLabel}
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={form.amountEuros}
+              onChange={(e) => setForm({ ...form, amountEuros: e.target.value })}
+              required
+            />
+          </label>
+          <label>
+            {t.paymentsPeriod}
+            <input
+              value={form.periodLabel}
+              onChange={(e) => setForm({ ...form, periodLabel: e.target.value })}
+              required
+            />
+          </label>
+          <label>
+            {t.paymentsDueDate}
+            <input
+              type="date"
+              value={form.dueDate}
+              onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+              required
+            />
+          </label>
+          <label>
+            {t.paymentsNotes}
+            <input
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            />
+          </label>
+          <button type="submit" className="btn primary" disabled={busy}>
+            {t.paymentsCreate}
+          </button>
+        </form>
+      )}
+      <div className="invoice-list">
+        {invoices.length === 0 && <p className="hint">{t.paymentsEmpty}</p>}
+        {invoices.map((inv) => (
+          <div key={inv.id} className="invoice">
+            <div>
+              <h3>
+                {inv.childName} · {inv.periodLabel}
+              </h3>
+              <p>
+                {t.paymentsDue}: {inv.dueDate}
+                {inv.notes ? ` · ${inv.notes}` : ''}
+              </p>
+            </div>
+            <div className="invoice-right">
+              <strong>{formatEur(inv.amountCents)}</strong>
+              <span className={`badge ${inv.status === 'paid' ? 'paid' : ''}`}>
+                {inv.status === 'paid' ? t.paymentsPaid : t.paymentsStatus}
+              </span>
+              {canMarkPaid && inv.status === 'pending' && (
+                <button
+                  type="button"
+                  className="btn ghost"
+                  disabled={busy}
+                  onClick={() => void onMarkPaid(inv.id)}
+                >
+                  {t.paymentsMarkPaid}
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
-      <button type="button" className="btn primary">
-        {t.paymentsPay}
-      </button>
       <p className="hint">{t.paymentsNote}</p>
     </section>
   )

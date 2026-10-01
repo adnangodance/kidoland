@@ -32,6 +32,23 @@ export type Report = {
   createdAt: string
 }
 
+
+export type Invoice = {
+  id: string
+  childId: string
+  childName: string
+  groupName: string
+  amountCents: number
+  currency: string
+  periodLabel: string
+  status: 'pending' | 'paid'
+  dueDate: string
+  paidAt: string | null
+  createdBy: string
+  createdAt: string
+  notes: string | null
+}
+
 async function api<T>(path: string, opts: RequestInit = {}, token?: string | null): Promise<T> {
   const headers: Record<string, string> = {
     ...(opts.headers as Record<string, string> | undefined),
@@ -79,6 +96,36 @@ export async function saveReport(
   return api<{ report: Report }>(
     '/api/reports',
     { method: 'POST', body: JSON.stringify(body) },
+    token,
+  )
+}
+
+export async function listInvoices(token: string) {
+  return api<{ invoices: Invoice[] }>('/api/invoices', {}, token)
+}
+
+export async function createInvoice(
+  token: string,
+  body: {
+    childId: string
+    amountCents: number
+    currency?: string
+    periodLabel: string
+    dueDate: string
+    notes?: string
+  },
+) {
+  return api<{ invoice: Invoice }>(
+    '/api/invoices',
+    { method: 'POST', body: JSON.stringify(body) },
+    token,
+  )
+}
+
+export async function markInvoicePaid(token: string, id: string) {
+  return api<{ invoice: Invoice }>(
+    `/api/invoices/${encodeURIComponent(id)}/paid`,
+    { method: 'PATCH' },
     token,
   )
 }

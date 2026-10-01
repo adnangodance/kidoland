@@ -60,8 +60,8 @@ Live pickup ETA, infant feeding/diaper logs, SMS gateway, multi-site white-label
 
 1. Auth + roles ✅  
 2. Daily reports ✅  
-3. Invoices + mark paid ← next  
-4. Attendance light + consent flag  
+3. Invoices + mark paid ✅  
+4. Attendance light + consent flag ← next  
 5. Polish i18n + pilot with one kindergarten  
 
 ## Open decisions

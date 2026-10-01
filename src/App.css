@@ -319,3 +319,22 @@
   font: inherit;
   background: #fff;
 }
+
+.badge.paid {
+  background: #dff5e8;
+  color: #0f5132;
+}
+
+.invoice-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.invoice-list .invoice {
+  margin: 0;
+}
+
+.invoice-right .btn {
+  margin-top: 0.35rem;
+}
