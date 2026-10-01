@@ -5,13 +5,17 @@ import {
   useMemo,
   useState,
   type ReactNode,
+  useRef,
 } from 'react'
-import { loginRequest, meRequest, type User } from './api'
+import { ApiError, loginRequest, meRequest, type User } from './api'
 
 type AuthCtx = {
   user: User | null
   token: string | null
   loading: boolean
+  expired: boolean
+  bootError: boolean
+  retryBoot: () => void
   login: (email: string, password: string) => Promise<string | null>
   logout: () => void
 }
@@ -25,56 +29,87 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.getItem(TOKEN_KEY),
   )
   const [loading, setLoading] = useState(true)
+  const [expired, setExpired] = useState(false)
+  const [bootError, setBootError] = useState(false)
+  const [bootRetry, setBootRetry] = useState(0)
+  const currentToken = useRef(token)
+  const loginGeneration = useRef(0)
+  useEffect(() => () => { loginGeneration.current++ }, [])
+  useEffect(() => { currentToken.current = token }, [token])
+  useEffect(() => {
+    function expire(event: Event) {
+      if ((event as CustomEvent<string>).detail !== currentToken.current) return
+      loginGeneration.current++
+      currentToken.current = null
+      localStorage.removeItem(TOKEN_KEY)
+      setToken(null); setUser(null); setExpired(true)
+    }
+    window.addEventListener('kidoland-session-expired', expire)
+    return () => window.removeEventListener('kidoland-session-expired', expire)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
     async function boot() {
+      setBootError(false)
       if (!token) {
         setLoading(false)
         return
       }
       try {
         const { user } = await meRequest(token)
-        if (!cancelled) setUser(user)
-      } catch {
-        localStorage.removeItem(TOKEN_KEY)
-        if (!cancelled) {
-          setToken(null)
-          setUser(null)
+        if (!cancelled && token === currentToken.current) setUser(user)
+      } catch (error) {
+        if (!cancelled && token === currentToken.current) {
+          if (error instanceof ApiError && error.status === 401) {
+            localStorage.removeItem(TOKEN_KEY); setToken(null); setUser(null); setExpired(true)
+          } else setBootError(true)
         }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled && token === currentToken.current) setLoading(false)
       }
     }
     void boot()
     return () => {
       cancelled = true
     }
-  }, [token])
+  }, [token, bootRetry])
 
   const value = useMemo<AuthCtx>(
     () => ({
       user,
       token,
       loading,
+      expired,
+      bootError,
+      retryBoot: () => { setLoading(true); setBootRetry((v) => v + 1) },
       login: async (email, password) => {
+        const attempt = ++loginGeneration.current
         try {
           const { token: next, user } = await loginRequest(email, password)
+          if (attempt !== loginGeneration.current) return 'cancelled'
           localStorage.setItem(TOKEN_KEY, next)
+          setExpired(false)
+          currentToken.current = next
+          setBootError(false)
           setToken(next)
           setUser(user)
           return null
         } catch {
-          return 'invalid'
+          return attempt === loginGeneration.current ? 'invalid' : 'cancelled'
         }
       },
       logout: () => {
+        loginGeneration.current++
+        currentToken.current = null
+        setBootError(false)
         localStorage.removeItem(TOKEN_KEY)
+        setExpired(false)
         setToken(null)
         setUser(null)
       },
     }),
-    [user, token, loading],
+    [user, token, loading, expired, bootError],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

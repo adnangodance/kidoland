@@ -4,13 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test": "node tests/run-attendance-ui.mjs && node tests/run-pilot-ui.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
     "dev:api": "npm run dev --prefix server",
     "dev:web": "vite",
-    "dev:all": "echo Run api on :4000 and web separately"
+    "dev:all": "node scripts/dev.mjs",
+    "test:pilot": "node tests/run-pilot-ui.mjs"
   },
   "dependencies": {
     "react": "^19.2.8",

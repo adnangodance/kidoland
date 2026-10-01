@@ -3,6 +3,7 @@ import {
   useContext,
   useMemo,
   useState,
+  useEffect,
   type ReactNode,
 } from 'react'
 import { translations, type Lang } from './translations'
@@ -19,7 +20,8 @@ type Ctx = {
 const LanguageContext = createContext<Ctx | null>(null)
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [lang, setLang] = useState<Lang>('sq')
+  const [lang, setLang] = useState<Lang>(() => localStorage.getItem('kidoland.language') === 'en' ? 'en' : 'sq')
+  useEffect(() => { localStorage.setItem('kidoland.language', lang); document.documentElement.lang = lang }, [lang])
   const value = useMemo(
     () => ({
       lang,

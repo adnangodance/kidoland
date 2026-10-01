@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
-import type { DbUser } from './db.js'
+import { db, type DbUser } from './db.js'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'kidoland-dev-secret-change-me'
 
@@ -20,18 +20,15 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ error: 'unauthorized' })
   }
   try {
-    const payload = jwt.verify(header.slice(7), JWT_SECRET) as {
-      sub: string
-      email: string
-      name: string
-      role: AuthUser['role']
+    const payload = jwt.verify(header.slice(7), JWT_SECRET)
+    if (typeof payload === 'string' || typeof payload.sub !== 'string') {
+      return res.status(401).json({ error: 'unauthorized' })
     }
-    ;(req as Request & { user: AuthUser }).user = {
-      id: payload.sub,
-      email: payload.email,
-      name: payload.name,
-      role: payload.role,
+    const current = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(payload.sub) as AuthUser | undefined
+    if (!current || !['parent', 'teacher', 'director'].includes(current.role)) {
+      return res.status(401).json({ error: 'unauthorized' })
     }
+    ;(req as Request & { user: AuthUser }).user = current
     next()
   } catch {
     return res.status(401).json({ error: 'unauthorized' })

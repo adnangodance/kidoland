@@ -1,0 +1,229 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { fork, type ChildProcess } from 'node:child_process'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { randomUUID } from 'node:crypto'
+import Database from 'better-sqlite3'
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
+import { euro } from '../../src/pilot-utils.js'
+
+async function fixture(existing?: (db: Database.Database) => void) {
+  const directory = await mkdtemp(path.join(tmpdir(), 'kidoland-pilot-'))
+  const databasePath = path.join(directory, 'test.sqlite')
+  if (existing) { const db = new Database(databasePath); existing(db); db.close() }
+  let child: ChildProcess | undefined
+  let base = ''
+  async function start() {
+    child = fork(fileURLToPath(new URL('./api-process.ts', import.meta.url)), [], { execArgv: ['--import', 'tsx'], env: { ...process.env, KIDOLAND_DB_PATH: databasePath }, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+    const processHandle = child
+    base = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('API startup timeout')), 15000)
+      processHandle.once('message', (message) => { clearTimeout(timer); resolve(`http://127.0.0.1:${(message as { port: number }).port}`) })
+      processHandle.once('error', reject)
+      processHandle.once('exit', (code) => { clearTimeout(timer); reject(new Error(`API exited ${code}`)) })
+      processHandle.stderr?.on('data', (data) => process.stderr.write(data))
+    })
+  }
+  async function stop() { if (child && child.exitCode === null) await new Promise<void>((resolve) => { child!.once('exit', () => resolve()); child!.kill('SIGTERM') }); child = undefined }
+  async function request(route: string, token?: string, body?: unknown, method = body === undefined ? 'GET' : 'POST') {
+    const response = await fetch(`${base}/api/${route}`, { method, headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })
+    return { status: response.status, data: await response.json() }
+  }
+  async function login(role: string) { const result = await request('auth/login', undefined, { email: `${role}@kidoland.demo`, password: `${role}123` }); assert.equal(result.status, 200); return result.data.token as string }
+  return { start, stop, request, login, databasePath, dispose: async () => { await stop(); await rm(directory, { recursive: true, force: true }) } }
+}
+
+test('pilot API authorization, management, consent, reports, fees and durable retries', async (t) => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const director = await f.login('director'), teacher = await f.login('teacher'), parent = await f.login('parent')
+    const date = '2040-10-01'
+    let familyId = '', familyToken = '', childId = '', invoiceId = ''
+    const parentDraft = { name: 'New family', email: 'Family@example.test', password: 'initial-password' }
+    await t.test('parent provisioning is director only, strict and hashed', async () => {
+      for (const token of [undefined, parent, teacher]) {
+        assert.equal((await request('parents', token)).status, token ? 403 : 401)
+        assert.equal((await request('parents', token, parentDraft)).status, token ? 403 : 401)
+      }
+      for (const body of [{ ...parentDraft, role: 'director' }, { ...parentDraft, password: 'short' }, { ...parentDraft, password: 'é'.repeat(40) }, { ...parentDraft, name: ' ' }, { ...parentDraft, email: 'bad' }]) assert.equal((await request('parents', director, body)).status, 400)
+      const result = await request('parents', director, parentDraft)
+      assert.equal(result.status, 201); familyId = result.data.parent.id
+      assert.equal(result.data.parent.role, 'parent'); assert.deepEqual(Object.keys(result.data.parent).sort(), ['email', 'id', 'name', 'role'])
+      assert.equal((await request('parents', director, { ...parentDraft, email: 'FAMILY@EXAMPLE.TEST' })).status, 409)
+      assert.ok((await request('parents', director)).data.parents.every((row: object) => !('password_hash' in row)))
+      const db = new Database(f.databasePath); const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(familyId) as { password_hash: string }; db.close()
+      assert.notEqual(row.password_hash, parentDraft.password); assert.ok(bcrypt.compareSync(parentDraft.password, row.password_hash))
+      familyToken = (await request('auth/login', undefined, { email: 'FAMILY@example.test', password: parentDraft.password })).data.token
+    })
+    await t.test('child validation, creation, edits and ownership', async () => {
+      const draft = { name: 'New Child', groupName: 'Group A', parentUserId: familyId }
+      for (const token of [undefined, parent, teacher]) assert.equal((await request('children', token, draft)).status, token ? 403 : 401)
+      for (const body of [{ ...draft, name: ' ' }, { ...draft, groupName: '' }, { ...draft, parentUserId: 'missing' }, { ...draft, parentUserId: 'u-teacher' }, { ...draft, photoConsent: true }]) assert.equal((await request('children', director, body)).status, 400)
+      const result = await request('children', director, draft); assert.equal(result.status, 201); childId = result.data.child.id; assert.equal(result.data.child.photoConsent, false)
+      assert.equal((await request(`children/${childId}`, teacher, draft, 'PATCH')).status, 403)
+      assert.equal((await request(`children/${childId}`, parent, draft, 'PATCH')).status, 403)
+      assert.equal((await request('children/missing', director, draft, 'PATCH')).status, 404)
+      assert.equal((await request(`children/${childId}`, director, { ...draft, name: 'Edited Child' }, 'PATCH')).data.child.name, 'Edited Child')
+      assert.deepEqual((await request('children', familyToken)).data.children.map((row: { id: string }) => row.id), [childId])
+      assert.ok(!(await request('children', parent)).data.children.some((row: { id: string }) => row.id === childId))
+    })
+    await t.test('own parent strict boolean consent and parent transfer reset', async () => {
+      for (const token of [undefined, parent, teacher, director]) assert.equal((await request(`children/${childId}/consent`, token, { photoConsent: true }, 'PATCH')).status, token ? 403 : 401)
+      for (const body of [{ photoConsent: 1 }, { photoConsent: 'true' }, {}, { photoConsent: true, extra: 1 }]) assert.equal((await request(`children/${childId}/consent`, familyToken, body, 'PATCH')).status, 400)
+      assert.equal((await request(`children/${childId}/consent`, familyToken, { photoConsent: true }, 'PATCH')).data.child.photoConsent, true)
+      assert.equal((await request('children', teacher)).data.children.find((row: { id: string }) => row.id === childId).photoConsent, true)
+      const draft = { name: 'Edited Child', groupName: 'Group B', parentUserId: familyId }
+      assert.equal((await request(`children/${childId}`, director, draft, 'PATCH')).data.child.photoConsent, true)
+      assert.equal((await request(`children/${childId}`, director, { ...draft, parentUserId: 'u-parent' }, 'PATCH')).data.child.photoConsent, false)
+      assert.equal((await request(`children/${childId}/consent`, familyToken, { photoConsent: true }, 'PATCH')).status, 403)
+      await request(`children/${childId}`, director, draft, 'PATCH')
+    })
+    await t.test('real report date, optional notes, correction uniqueness and parent isolation', async () => {
+      const body = { childId, reportDate: date, mood: 'mood:happy', meals: 'meals:all', nap: 'nap:short', activities: 'activity:art|activity:stories' }
+      assert.equal((await request('reports', parent, body)).status, 403)
+      for (const invalid of [{ ...body, reportDate: '2026-02-29' }, { ...body, mood: ' ' }, { ...body, extra: true }]) assert.equal((await request('reports', teacher, invalid)).status, 400)
+      assert.equal((await request('reports', teacher, { ...body, childId: 'missing' })).status, 404)
+      const saved = await request('reports', teacher, body); assert.equal(saved.status, 201); assert.equal(saved.data.report.note, '')
+      const correction = await request('reports', director, { ...body, mood: 'mood:calm', note: 'Correction' }); assert.equal(correction.data.report.id, saved.data.report.id)
+      assert.equal((await request(`reports?childId=${childId}&date=${date}`, familyToken)).data.reports.length, 1)
+      assert.equal((await request(`reports?childId=${childId}&date=${date}`, parent)).data.reports.length, 0)
+      assert.equal((await request('reports?date=2026-04-31', teacher)).status, 400)
+      await request('attendance', teacher, { childId, attendanceDate: date, status: 'present' })
+      assert.equal((await request(`attendance?date=${date}`, familyToken)).data.attendance[0].childId, childId)
+    })
+    const invoice = { childId, requestId: randomUUID(), periodLabel: 'October', dueDate: date, items: [{ description: 'Tuition', amountCents: 12345 }, { description: 'Meals', amountCents: 678 }] }
+    await t.test('item sums, validation, create roles, parent isolation and mark paid', async () => {
+      assert.equal((await request('invoices', parent, invoice)).status, 403)
+      for (const invalid of [{ ...invoice, currency: 'USD' }, { ...invoice, dueDate: '2026-04-31' }, { ...invoice, items: [] }, ...[0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1].map((amountCents) => ({ ...invoice, items: [{ description: 'Fee', amountCents }] })), { ...invoice, items: [{ description: ' ', amountCents: 10 }] }, { ...invoice, items: [{ description: 'Fee', amountCents: Number.MAX_SAFE_INTEGER }, { description: 'Fee', amountCents: 1 }] }]) assert.equal((await request('invoices', teacher, invalid)).status, 400)
+      const result = await request('invoices', teacher, invoice); assert.equal(result.status, 201); invoiceId = result.data.invoice.id
+      assert.equal(result.data.invoice.amountCents, 13023); assert.deepEqual(result.data.invoice.items.map((row: { amountCents: number }) => row.amountCents), [12345, 678])
+      assert.ok((await request('invoices', familyToken)).data.invoices.some((row: { id: string }) => row.id === invoiceId))
+      assert.ok(!(await request('invoices', parent)).data.invoices.some((row: { id: string }) => row.id === invoiceId))
+      for (const token of [undefined, teacher, parent, familyToken]) assert.equal((await request(`invoices/${invoiceId}/paid`, token, undefined, 'PATCH')).status, token ? 403 : 401)
+      const paid = (await request(`invoices/${invoiceId}/paid`, director, undefined, 'PATCH')).data.invoice
+      const repeated = (await request(`invoices/${invoiceId}/paid`, director, undefined, 'PATCH')).data.invoice
+      assert.equal(paid.status, 'paid'); assert.deepEqual(repeated, paid); assert.deepEqual(paid.items, result.data.invoice.items)
+    })
+    await t.test('durable user scoped invoice retry and changed payload conflict after restart', async () => {
+      await f.stop(); await f.start()
+      assert.equal((await request('invoices', teacher, invoice)).data.invoice.id, invoiceId)
+      assert.equal((await request('invoices', teacher, { ...invoice, periodLabel: 'Changed' })).status, 409)
+      const otherUser = await request('invoices', director, invoice); assert.equal(otherUser.status, 201); assert.notEqual(otherUser.data.invoice.id, invoiceId)
+    })
+    await t.test('atomic rollback on failed line insertion', async () => {
+      await f.stop(); const db = new Database(f.databasePath)
+      const before = db.prepare('SELECT COUNT(*) AS n FROM invoices').get()
+      db.exec("CREATE TRIGGER fail_item BEFORE INSERT ON invoice_items BEGIN SELECT RAISE(FAIL, 'test-failure'); END"); db.close(); await f.start()
+      assert.equal((await request('invoices', teacher, { ...invoice, requestId: randomUUID() })).status, 500)
+      await f.stop(); const check = new Database(f.databasePath); assert.deepEqual(check.prepare('SELECT COUNT(*) AS n FROM invoices').get(), before); check.exec('DROP TRIGGER fail_item'); check.close(); await f.start()
+    })
+    await t.test('uncapped school/family dashboard and selected-child correction beyond history cap', async () => {
+      await f.stop(); const db = new Database(f.databasePath)
+      db.transaction(() => { for (let i = 0; i < 105; i++) {
+        const id = `bulk-${i}`; db.prepare('INSERT INTO children (id,name,group_name,parent_user_id) VALUES (?,?,?,?)').run(id, id, 'Bulk', 'u-parent')
+        db.prepare('INSERT INTO reports VALUES (?,?,?,?,?,?,?,?,?,?)').run(`r-${id}`, id, 'u-teacher', date, 'legacy text', 'all', 'none', 'play', '', date)
+        db.prepare('INSERT INTO invoices (id,child_id,amount_cents,currency,period_label,status,due_date,created_by,created_at) VALUES (?,?,100,\'EUR\',\'Bulk\',\'pending\',?,\'u-director\',?)').run(`i-${id}`, id, date, date)
+      } })(); db.close(); await f.start()
+      const summary = (await request(`dashboard?date=${date}`, teacher)).data.summary
+      assert.equal(summary.children, 108); assert.equal(summary.reports, 106); assert.equal(summary.unpaidInvoices, 108); assert.deepEqual(summary.unpaidBalances, [{ currency: 'EUR', amountCents: '59523' }])
+      assert.equal(summary.present + summary.absent + summary.unmarked, summary.children)
+      assert.equal((await request('reports', teacher)).data.reports.length, 50)
+      assert.equal((await request(`reports?date=${date}&childId=bulk-99`, teacher)).data.reports[0].mood, 'legacy text')
+      const own = (await request(`dashboard?date=${date}`, familyToken)).data.summary
+      assert.equal(own.children, 1); assert.equal(own.reports, 1); assert.equal(own.present, 1); assert.equal(own.unpaidInvoices, 1); assert.deepEqual(own.unpaidBalances, [{ currency: 'EUR', amountCents: '13023' }]); assert.equal(own.childSummaries[0].id, childId)
+      assert.equal((await request('dashboard?date=2026-04-31', teacher)).status, 400)
+    })
+    await t.test('JWT fields cannot elevate roles, deleted accounts are rejected', async () => {
+      const forgedClaims = jwt.sign({ sub: 'u-parent', role: 'director' }, process.env.JWT_SECRET || 'kidoland-dev-secret-change-me')
+      assert.equal((await request('parents', forgedClaims)).status, 403)
+      const missing = jwt.sign({ sub: 'missing', role: 'director' }, process.env.JWT_SECRET || 'kidoland-dev-secret-change-me')
+      assert.equal((await request('children', missing)).status, 401)
+    })
+  } finally { await f.dispose() }
+})
+
+test('legacy migration preserves identifiers, totals and paid state and is idempotent', async () => {
+  const f = await fixture()
+  try {
+    await f.start(); const token = await f.login('director'); const before = (await f.request('invoices', token)).data.invoices
+    await f.stop(); const db = new Database(f.databasePath)
+    db.exec('DROP TABLE invoice_requests; DROP TABLE invoice_items; ALTER TABLE children DROP COLUMN photo_consent'); db.close()
+    await f.start()
+    const first = (await f.request('invoices', token)).data.invoices
+    assert.deepEqual(first, before)
+    assert.ok(first.every((row: { amountCents: number; items: { amountCents: number }[] }) => row.items.length === 1 && row.items[0].amountCents === row.amountCents))
+    await f.stop(); await f.start(); assert.deepEqual((await f.request('invoices', token)).data.invoices, first)
+    const paid = first.find((row: { status: string }) => row.status === 'paid')
+    assert.deepEqual((await f.request(`invoices/${paid.id}/paid`, token, undefined, 'PATCH')).data.invoice, paid)
+  } finally { await f.dispose() }
+})
+
+test('partial pre-pilot database seeds no dangling demo references', async () => {
+  const f = await fixture((db) => {
+    db.exec("CREATE TABLE users (id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,role TEXT NOT NULL)")
+    db.prepare('INSERT INTO users VALUES (?,?,?,?,?)').run('real-user', 'Real parent', 'real@example.test', bcrypt.hashSync('initial-password', 4), 'parent')
+  })
+  try {
+    await f.start(); await f.stop()
+    const db = new Database(f.databasePath)
+    assert.equal((db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n, 1)
+    for (const table of ['children', 'reports', 'invoices']) assert.equal((db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n, 0)
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []); db.close()
+    await f.start()
+  } finally { await f.dispose() }
+})
+
+
+test('review regressions: exact currency balances, uncapped pending invoices and durable child retries', async () => {
+  const f = await fixture()
+  try {
+    await f.start()
+    const director = await f.login('director'), parent = await f.login('parent')
+    const childDraft = { name: 'Retry child', groupName: 'Retry group', parentUserId: 'u-parent', requestId: randomUUID() }
+    const first = await f.request('children', director, childDraft)
+    assert.equal(first.status, 201)
+    await f.stop(); await f.start()
+    const replay = await f.request('children', director, childDraft)
+    assert.deepEqual(replay.data.child, first.data.child)
+    assert.equal((await f.request('children', director, { ...childDraft, name: 'Changed' })).status, 409)
+    assert.equal((await f.request('children', director)).data.children.filter((child: { name: string }) => child.name === 'Retry child').length, 1)
+    await f.stop()
+    const db = new Database(f.databasePath)
+    db.prepare("UPDATE invoices SET due_date = '1999-01-01' WHERE id = 'inv-arta-oct'").run()
+    db.transaction(() => {
+      const insert = db.prepare("INSERT INTO invoices (id,child_id,amount_cents,currency,period_label,status,due_date,created_by,created_at) VALUES (?,'c-arta',?,?,?,?,'2040-01-01','u-director','2040-01-01')")
+      for (let index = 0; index < 1100; index++) insert.run(`boundary-${index}`, Number.MAX_SAFE_INTEGER, 'EUR', 'Boundary', 'pending')
+      insert.run('legacy-usd', 12345, 'USD', 'Legacy USD', 'pending')
+      insert.run('legacy-invalid', 45678, 'EURO', 'Legacy currency', 'pending')
+      for (let index = 0; index < 105; index++) insert.run(`paid-${index}`, 100, 'EUR', 'Paid history', 'paid')
+      db.prepare('INSERT INTO users VALUES (?,?,?,?,?)').run('second-director', 'Second director', 'second-director@example.test', bcrypt.hashSync('initial-password', 4), 'director')
+    })()
+    db.close(); await f.start()
+    const summary = (await f.request('dashboard?date=2040-01-01', parent)).data.summary
+    assert.deepEqual(summary.unpaidBalances, [
+      { currency: 'EUR', amountCents: (BigInt(Number.MAX_SAFE_INTEGER) * 1100n + 36000n).toString() },
+      { currency: 'EURO', amountCents: '45678' }, { currency: 'USD', amountCents: '12345' },
+    ])
+    const invoices = (await f.request('invoices', director)).data.invoices
+    assert.equal(invoices.filter((invoice: { status: string }) => invoice.status === 'pending').length, 1104)
+    assert.equal(invoices.filter((invoice: { status: string }) => invoice.status === 'paid').length, 100)
+    assert.ok(invoices.some((invoice: { id: string }) => invoice.id === 'inv-arta-oct'))
+    assert.equal((await f.request('invoices/inv-arta-oct/paid', director, undefined, 'PATCH')).data.invoice.status, 'paid')
+    const second = jwt.sign({ sub: 'second-director', role: 'director' }, process.env.JWT_SECRET || 'kidoland-dev-secret-change-me')
+    const secondChild = await f.request('children', second, childDraft)
+    assert.equal(secondChild.status, 201); assert.notEqual(secondChild.data.child.id, first.data.child.id)
+    for (const lang of ['en', 'sq']) {
+      const max = euro(Number.MAX_SAFE_INTEGER, lang)
+      assert.ok(max.endsWith(lang === 'en' ? '.91' : '€') || max.includes(',91'), max)
+      assert.equal(euro('9007199254740991', lang), max)
+      const expected = lang === 'en' ? '90,071,992,547,409.91 EURO' : '90\u00a0071\u00a0992\u00a0547\u00a0409,91 EURO'
+      assert.equal(euro('9007199254740991', lang, 'EURO'), expected)
+    }
+  } finally { await f.dispose() }
+})

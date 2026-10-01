@@ -4,9 +4,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const dbPath = path.join(__dirname, '..', 'kidoland.sqlite')
+const dbPath = process.env.KIDOLAND_DB_PATH || path.join(__dirname, '..', 'kidoland.sqlite')
 
 export const db = new Database(dbPath)
+db.pragma('foreign_keys = ON')
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -51,7 +52,37 @@ db.exec(`
     created_at TEXT NOT NULL,
     notes TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS attendance (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL REFERENCES children(id),
+    attendance_date TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('present','absent')),
+    marked_by TEXT NOT NULL REFERENCES users(id),
+    updated_at TEXT NOT NULL,
+    UNIQUE(child_id, attendance_date)
+  );
+  CREATE INDEX IF NOT EXISTS attendance_date_child ON attendance(attendance_date, child_id);
 `)
+
+// Additive migration: older pilot rows retain their IDs, balances and paid state.
+const childColumns = db.prepare('PRAGMA table_info(children)').all() as { name: string }[]
+if (!childColumns.some((column) => column.name === 'photo_consent')) {
+  db.exec('ALTER TABLE children ADD COLUMN photo_consent INTEGER NOT NULL DEFAULT 0 CHECK(photo_consent IN (0,1))')
+}
+db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
+  id TEXT PRIMARY KEY, invoice_id TEXT NOT NULL REFERENCES invoices(id),
+  description TEXT NOT NULL, amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+  position INTEGER NOT NULL
+); CREATE INDEX IF NOT EXISTS invoice_items_invoice ON invoice_items(invoice_id, position);
+ CREATE TABLE IF NOT EXISTS invoice_requests (
+   request_id TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id), payload TEXT NOT NULL,
+   invoice_id TEXT NOT NULL REFERENCES invoices(id), PRIMARY KEY(user_id, request_id)
+ );
+ CREATE TABLE IF NOT EXISTS child_requests (
+   request_id TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id), payload TEXT NOT NULL,
+   child_id TEXT NOT NULL REFERENCES children(id), PRIMARY KEY(user_id, request_id)
+ );`)
 
 export type DbUser = {
   id: string
@@ -98,7 +129,7 @@ if (count.c === 0) {
 }
 
 const childCount = db.prepare('SELECT COUNT(*) AS c FROM children').get() as { c: number }
-if (childCount.c === 0) {
+if (childCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-parent' AND role = 'parent'").get()) {
   db.prepare(
     'INSERT INTO children (id, name, group_name, parent_user_id) VALUES (?, ?, ?, ?)',
   ).run('c-arta', 'Arta Krasniqi', 'Bletët / Bumblebees', 'u-parent')
@@ -108,7 +139,7 @@ if (childCount.c === 0) {
 }
 
 const reportCount = db.prepare('SELECT COUNT(*) AS c FROM reports').get() as { c: number }
-if (reportCount.c === 0) {
+if (reportCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get() && db.prepare("SELECT id FROM users WHERE id = 'u-teacher'").get()) {
   const today = new Date().toISOString().slice(0, 10)
   db.prepare(
     `INSERT INTO reports (id, child_id, teacher_user_id, report_date, mood, meals, nap, activities, note, created_at)
@@ -128,7 +159,7 @@ if (reportCount.c === 0) {
 }
 
 const invoiceCount = db.prepare('SELECT COUNT(*) AS c FROM invoices').get() as { c: number }
-if (invoiceCount.c === 0) {
+if (invoiceCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get() && db.prepare("SELECT id FROM children WHERE id = 'c-luan'").get() && db.prepare("SELECT id FROM users WHERE id = 'u-director'").get()) {
   const now = new Date().toISOString()
   db.prepare(
     `INSERT INTO invoices (id, child_id, amount_cents, currency, period_label, status, due_date, paid_at, created_by, created_at, notes)
@@ -179,3 +210,8 @@ if (invoiceCount.c === 0) {
     'Monthly tuition',
   )
 }
+
+// Backfill after seeding, and only invoices without any breakdown.
+db.exec(`INSERT INTO invoice_items (id, invoice_id, description, amount_cents, position)
+  SELECT 'legacy-' || i.id, i.id, 'tuition', i.amount_cents, 0 FROM invoices i
+  WHERE NOT EXISTS (SELECT 1 FROM invoice_items item WHERE item.invoice_id = i.id)`)
