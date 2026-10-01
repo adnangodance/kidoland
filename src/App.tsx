@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
+import { listChildren, listReports, saveReport, type Child, type Report } from './api'
 import { AuthProvider, useAuth } from './auth'
 import { LanguageProvider, useI18n } from './i18n/LanguageContext'
 import './App.css'
@@ -245,31 +246,168 @@ function Dashboard() {
 
 function Reports() {
   const { t } = useI18n()
+  const { user, token } = useAuth()
+  const [children, setChildren] = useState<Child[]>([])
+  const [reports, setReports] = useState<Report[]>([])
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({
+    childId: '',
+    reportDate: new Date().toISOString().slice(0, 10),
+    mood: '',
+    meals: '',
+    nap: '',
+    activities: '',
+    note: '',
+  })
+  const canWrite = user?.role === 'teacher' || user?.role === 'director'
+
+  async function reload() {
+    if (!token) return
+    try {
+      const [c, r] = await Promise.all([listChildren(token), listReports(token)])
+      setChildren(c.children)
+      setReports(r.reports)
+      setForm((f) => ({
+        ...f,
+        childId: f.childId || c.children[0]?.id || '',
+      }))
+      setError('')
+    } catch {
+      setError('api')
+    }
+  }
+
+  useEffect(() => {
+    void reload()
+  }, [token])
+
+  async function onSave(e: FormEvent) {
+    e.preventDefault()
+    if (!token) return
+    try {
+      await saveReport(token, form)
+      await reload()
+      setForm((f) => ({
+        ...f,
+        mood: '',
+        meals: '',
+        nap: '',
+        activities: '',
+        note: '',
+      }))
+    } catch {
+      setError('save')
+    }
+  }
+
   return (
     <section className="panel">
       <h1>{t.reportsTitle}</h1>
-      <p className="panel-sub">{t.reportsDemoChild}</p>
-      <div className="report-grid">
-        <div>
-          <h4>{t.reportsMood}</h4>
-          <p>{t.reportsMoodVal}</p>
-        </div>
-        <div>
-          <h4>{t.reportsMeals}</h4>
-          <p>{t.reportsMealsVal}</p>
-        </div>
-        <div>
-          <h4>{t.reportsNap}</h4>
-          <p>{t.reportsNapVal}</p>
-        </div>
-        <div>
-          <h4>{t.reportsActivities}</h4>
-          <p>{t.reportsActivitiesVal}</p>
-        </div>
-      </div>
-      <div className="note">
-        <h4>{t.reportsNote}</h4>
-        <p>{t.reportsNoteVal}</p>
+      {error && <p className="form-error">{t.loginError}</p>}
+      {canWrite && (
+        <form className="login-form" onSubmit={onSave}>
+          <label>
+            Child
+            <select
+              value={form.childId}
+              onChange={(e) => setForm({ ...form, childId: e.target.value })}
+              required
+            >
+              {children.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} · {c.groupName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Date
+            <input
+              type="date"
+              value={form.reportDate}
+              onChange={(e) => setForm({ ...form, reportDate: e.target.value })}
+              required
+            />
+          </label>
+          <label>
+            {t.reportsMood}
+            <input
+              value={form.mood}
+              onChange={(e) => setForm({ ...form, mood: e.target.value })}
+              required
+            />
+          </label>
+          <label>
+            {t.reportsMeals}
+            <input
+              value={form.meals}
+              onChange={(e) => setForm({ ...form, meals: e.target.value })}
+              required
+            />
+          </label>
+          <label>
+            {t.reportsNap}
+            <input
+              value={form.nap}
+              onChange={(e) => setForm({ ...form, nap: e.target.value })}
+              required
+            />
+          </label>
+          <label>
+            {t.reportsActivities}
+            <input
+              value={form.activities}
+              onChange={(e) => setForm({ ...form, activities: e.target.value })}
+              required
+            />
+          </label>
+          <label>
+            {t.reportsNote}
+            <textarea
+              value={form.note}
+              onChange={(e) => setForm({ ...form, note: e.target.value })}
+              required
+              rows={3}
+            />
+          </label>
+          <button type="submit" className="btn primary">
+            Save report
+          </button>
+        </form>
+      )}
+      <div className="report-list">
+        {reports.length === 0 && <p className="hint">No reports yet.</p>}
+        {reports.map((r) => (
+          <article key={r.id} className="note" style={{ marginTop: '1rem' }}>
+            <h4>
+              {r.childName} · {r.reportDate}
+            </h4>
+            <p className="panel-sub">
+              {r.groupName} · {r.teacherName}
+            </p>
+            <div className="report-grid">
+              <div>
+                <h4>{t.reportsMood}</h4>
+                <p>{r.mood}</p>
+              </div>
+              <div>
+                <h4>{t.reportsMeals}</h4>
+                <p>{r.meals}</p>
+              </div>
+              <div>
+                <h4>{t.reportsNap}</h4>
+                <p>{r.nap}</p>
+              </div>
+              <div>
+                <h4>{t.reportsActivities}</h4>
+                <p>{r.activities}</p>
+              </div>
+            </div>
+            <p>
+              <strong>{t.reportsNote}:</strong> {r.note}
+            </p>
+          </article>
+        ))}
       </div>
     </section>
   )
