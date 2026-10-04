@@ -47,7 +47,7 @@ try {
   if (!result || !/data-result="passed"/.test(result[0])) throw new Error(result ? result[1] : `No completed attendance results marker: ${stderr.slice(-1500)}`)
   console.log(result[1].replaceAll('&gt;', '>').replaceAll('&lt;', '<').replaceAll('&amp;', '&'))
 } finally {
-  if (child && child.exitCode === null) child.kill('SIGKILL')
+  if (child && child.exitCode === null) { const closed = new Promise((resolve) => child.once('exit', resolve)); child.kill('SIGKILL'); await closed }
   await server?.close()
-  await rm(profile, { recursive: true, force: true })
+  await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
 }

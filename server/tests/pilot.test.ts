@@ -862,3 +862,68 @@ test('child medical profile and incident reports API: emergency profile CRUD, in
     await f.dispose()
   }
 })
+
+test('classroom moments API: list, tag children with consent details, reactions, and staff management', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const parent = await f.login('parent')
+    const teacher = await f.login('teacher')
+
+    // Initial list returns seeded moments
+    const listRes = await request('moments', parent)
+    assert.equal(listRes.status, 200)
+    assert(listRes.data.moments.length >= 2)
+    const artMoment = listRes.data.moments.find((m: { id: string }) => m.id === 'moment-art-1')
+    assert(artMoment)
+    assert.equal(artMoment.learningArea, 'art')
+    assert.equal(artMoment.reactionCount, 1)
+    assert.equal(artMoment.userReacted, true)
+
+    // Parent toggles heart reaction (removes reaction)
+    const unlikeRes = await request('moments/moment-art-1/react', parent, {})
+    assert.equal(unlikeRes.status, 200)
+    assert.equal(unlikeRes.data.reacted, false)
+    assert.equal(unlikeRes.data.reactionCount, 0)
+
+    // Parent toggles heart reaction back (adds reaction)
+    const likeRes = await request('moments/moment-art-1/react', parent, {})
+    assert.equal(likeRes.status, 200)
+    assert.equal(likeRes.data.reacted, true)
+    assert.equal(likeRes.data.reactionCount, 1)
+
+    // Parent cannot create a moment
+    const forbiddenCreate = await request('moments', parent, {
+      title: 'Parent moment',
+      groupName: 'Bletët / Bumblebees',
+      learningArea: 'art',
+      momentDate: '2026-10-05',
+      description: 'Test',
+    })
+    assert.equal(forbiddenCreate.status, 403)
+
+    // Teacher creates a new classroom moment
+    const createRes = await request('moments', teacher, {
+      title: 'Muzikë dhe ritëm me daulle / Music & rhythm circle 🥁',
+      groupName: 'Bletët / Bumblebees',
+      learningArea: 'music',
+      momentDate: '2026-10-05',
+      description: 'Fëmijët kërcyen dhe ndoqën ritmin me daulle dhe shkopinj druri!',
+      imageUrl: 'https://images.example/drums.jpg',
+      taggedChildren: ['c-arta'],
+    })
+    assert.equal(createRes.status, 201)
+    const createdId = createRes.data.moment.id
+    assert.equal(createRes.data.moment.learningArea, 'music')
+    assert.equal(createRes.data.moment.taggedChildrenDetails.length, 1)
+    assert.equal(createRes.data.moment.taggedChildrenDetails[0].name, 'Arta Krasniqi')
+
+    // Teacher can delete a moment
+    const delRes = await request(`moments/${createdId}`, teacher, undefined, 'DELETE')
+    assert.equal(delRes.status, 200)
+    assert.equal(delRes.data.success, true)
+  } finally {
+    await f.dispose()
+  }
+})

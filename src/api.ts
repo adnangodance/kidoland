@@ -591,3 +591,67 @@ export async function acknowledgeIncident(token: string, incidentId: string) {
     method: 'POST',
   }, token)
 }
+
+export type LearningArea = 'art' | 'stem' | 'motor' | 'music' | 'story' | 'outdoor' | 'other'
+
+export type TaggedChildDetail = {
+  id: string
+  name: string
+  photoConsent: boolean
+}
+
+export type ClassroomMoment = {
+  id: string
+  title: string
+  groupName: string
+  learningArea: LearningArea
+  momentDate: string
+  description: string
+  imageUrl?: string | null
+  taggedChildren: string[]
+  taggedChildrenDetails: TaggedChildDetail[]
+  reactionCount: number
+  userReacted: boolean
+  createdBy: string
+  createdByName: string
+  createdByRole: string
+  createdAt: string
+}
+
+export type MomentInput = {
+  title: string
+  groupName: string
+  learningArea: LearningArea
+  momentDate: string
+  description: string
+  imageUrl?: string | null
+  taggedChildren?: string[]
+}
+
+export async function listMoments(token: string, options?: { groupName?: string; date?: string; area?: string }, signal?: AbortSignal) {
+  const params = new URLSearchParams()
+  if (options?.groupName) params.set('groupName', options.groupName)
+  if (options?.date) params.set('date', options.date)
+  if (options?.area) params.set('area', options.area)
+  const qs = params.toString() ? `?${params.toString()}` : ''
+  return api<{ moments: ClassroomMoment[] }>(`/api/moments${qs}`, { signal }, token)
+}
+
+export async function createMoment(token: string, input: MomentInput) {
+  return api<{ moment: ClassroomMoment }>('/api/moments', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function toggleMomentReaction(token: string, momentId: string) {
+  return api<{ momentId: string; reacted: boolean; reactionCount: number }>(`/api/moments/${momentId}/react`, {
+    method: 'POST',
+  }, token)
+}
+
+export async function deleteMoment(token: string, momentId: string) {
+  return api<{ success: boolean }>(`/api/moments/${momentId}`, {
+    method: 'DELETE',
+  }, token)
+}

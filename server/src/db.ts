@@ -220,7 +220,51 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
     created_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS incident_reports_child ON incident_reports(child_id, incident_date);
-  CREATE INDEX IF NOT EXISTS incident_reports_date ON incident_reports(incident_date DESC);`)
+  CREATE INDEX IF NOT EXISTS incident_reports_date ON incident_reports(incident_date DESC);
+  CREATE TABLE IF NOT EXISTS classroom_moments (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    group_name TEXT NOT NULL,
+    learning_area TEXT NOT NULL CHECK(learning_area IN ('art', 'stem', 'motor', 'music', 'story', 'outdoor', 'other')),
+    moment_date TEXT NOT NULL,
+    description TEXT NOT NULL,
+    image_url TEXT,
+    tagged_children TEXT NOT NULL DEFAULT '[]',
+    created_by TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS classroom_moments_date ON classroom_moments(moment_date DESC, created_at DESC);
+  CREATE INDEX IF NOT EXISTS classroom_moments_group ON classroom_moments(group_name);
+  CREATE TABLE IF NOT EXISTS moment_reactions (
+    id TEXT PRIMARY KEY,
+    moment_id TEXT NOT NULL REFERENCES classroom_moments(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    reaction_type TEXT NOT NULL DEFAULT 'heart' CHECK(reaction_type IN ('heart', 'star', 'clap')),
+    created_at TEXT NOT NULL,
+    UNIQUE(moment_id, user_id, reaction_type)
+  );
+  CREATE INDEX IF NOT EXISTS moment_reactions_moment ON moment_reactions(moment_id);`)
+
+export type DbClassroomMoment = {
+  id: string
+  title: string
+  group_name: string
+  learning_area: string
+  moment_date: string
+  description: string
+  image_url: string | null
+  tagged_children: string
+  created_by: string
+  created_at: string
+}
+
+export type DbMomentReaction = {
+  id: string
+  moment_id: string
+  user_id: string
+  reaction_type: string
+  created_at: string
+}
 
 export type DbMedicalProfile = {
   child_id: string
@@ -620,4 +664,47 @@ if (incCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'"
     null,
     now,
   )
+}
+
+const momentCount = db.prepare('SELECT COUNT(*) AS c FROM classroom_moments').get() as { c: number }
+if (momentCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-teacher'").get()) {
+  const insertMoment = db.prepare(`
+    INSERT INTO classroom_moments (id, title, group_name, learning_area, moment_date, description, image_url, tagged_children, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const now = new Date().toISOString()
+  const today = now.slice(0, 10)
+
+  insertMoment.run(
+    'moment-art-1',
+    'Piktura me gishta dhe përzierja e ngjyrave / Finger painting & color mixing 🎨',
+    'all',
+    'art',
+    today,
+    'Sot fëmijët eksploruan ngjyrat bazë dhe krijuan ylberin e tyre duke përzier të verdhën me të kaltrën për të zbuluar të gjelbrën! / Today children explored primary colors and mixed blue and yellow to create vibrant greens for our giant classroom rainbow.',
+    null,
+    JSON.stringify(['c-arta', 'c-luan']),
+    'u-teacher',
+    now,
+  )
+
+  insertMoment.run(
+    'moment-outdoor-1',
+    'Eksplorimi i gjetheve të vjeshtës në kopsht / Autumn nature walk & sensory discovery 🍂',
+    'Bletët / Bumblebees',
+    'outdoor',
+    today,
+    'Mblodhëm gjethe të thata me ngjyra të ndryshme në oborrin e kopshtit dhe mësuam për ndryshimin e stinëve! / We collected crisp colorful leaves in the kindergarten garden and learned how trees change during autumn.',
+    null,
+    JSON.stringify(['c-arta']),
+    'u-teacher',
+    now,
+  )
+
+  if (db.prepare("SELECT id FROM users WHERE id = 'u-parent'").get()) {
+    db.prepare(`
+      INSERT INTO moment_reactions (id, moment_id, user_id, reaction_type, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run('rx-1', 'moment-art-1', 'u-parent', 'heart', now)
+  }
 }

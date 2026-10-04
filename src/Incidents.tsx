@@ -241,7 +241,7 @@ export default function Incidents() {
     <section className="panel incidents-panel" aria-busy={loading}>
       <div className="panel-header">
         <div>
-          <h2 tabIndex={-1}>{t.incidentsTitle}</h2>
+          <h1 tabIndex={-1}>{t.incidentsTitle}</h1>
           <p className="subtitle">
             {isStaff ? t.incidentsStaffSubtitle : t.incidentsParentSubtitle}
           </p>

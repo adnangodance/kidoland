@@ -1330,6 +1330,153 @@ app.post('/api/incidents/:id/acknowledge', requireAuth, (req, res) => {
   })
 })
 
+const momentSelect = `
+  SELECT m.id, m.title, m.group_name AS groupName, m.learning_area AS learningArea,
+         m.moment_date AS momentDate, m.description, m.image_url AS imageUrl,
+         m.tagged_children AS taggedChildren, m.created_by AS createdBy,
+         u.name AS createdByName, u.role AS createdByRole,
+         m.created_at AS createdAt
+  FROM classroom_moments m
+  JOIN users u ON u.id = m.created_by
+`
+
+const momentQuery = z.object({
+  groupName: z.string().optional(),
+  date: calendarDate.optional(),
+  area: z.string().optional(),
+}).strict()
+
+const momentBody = z.object({
+  title: z.string().min(1).max(200),
+  groupName: z.string().min(1).max(100),
+  learningArea: z.enum(['art', 'stem', 'motor', 'music', 'story', 'outdoor', 'other']),
+  momentDate: calendarDate,
+  description: z.string().min(1).max(2000),
+  imageUrl: z.string().max(1000000).nullable().optional(),
+  taggedChildren: z.array(z.string()).default([]),
+}).strict()
+
+function enrichMoment(m: any, currentUserId: string) {
+  let tagged: string[] = []
+  try { tagged = JSON.parse(m.taggedChildren || '[]') } catch { tagged = [] }
+  let taggedChildrenDetails: { id: string; name: string; photoConsent: boolean }[] = []
+  if (tagged.length > 0) {
+    const placeholders = tagged.map(() => '?').join(',')
+    const rows = db.prepare(`SELECT id, name, photo_consent AS photoConsent FROM children WHERE id IN (${placeholders})`).all(...tagged) as any[]
+    taggedChildrenDetails = rows.map((r) => ({ id: r.id, name: r.name, photoConsent: Boolean(r.photoConsent) }))
+  }
+
+  const reactionCountRow = db.prepare('SELECT COUNT(*) AS c FROM moment_reactions WHERE moment_id = ?').get(m.id) as { c: number }
+  const userReactedRow = db.prepare('SELECT id FROM moment_reactions WHERE moment_id = ? AND user_id = ?').get(m.id, currentUserId)
+
+  return {
+    ...m,
+    taggedChildren: tagged,
+    taggedChildrenDetails,
+    reactionCount: reactionCountRow?.c || 0,
+    userReacted: Boolean(userReactedRow),
+  }
+}
+
+app.get('/api/moments', requireAuth, (req, res) => {
+  const parsed = momentQuery.safeParse(req.query)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })
+  const user = authed(req)
+
+  let sql = `${momentSelect} WHERE 1=1`
+  const params: any[] = []
+
+  if (user.role === 'parent') {
+    const parentGroups = db.prepare('SELECT DISTINCT group_name FROM children WHERE parent_user_id = ?').all(user.id) as { group_name: string }[]
+    const groupNames = parentGroups.map((g) => g.group_name)
+    if (groupNames.length === 0) {
+      sql += " AND (m.group_name = 'all')"
+    } else {
+      const placeholders = groupNames.map(() => '?').join(',')
+      sql += ` AND (m.group_name IN (${placeholders}) OR m.group_name = 'all')`
+      params.push(...groupNames)
+    }
+  }
+
+  if (parsed.data.groupName) {
+    sql += ' AND m.group_name = ?'
+    params.push(parsed.data.groupName)
+  }
+  if (parsed.data.date) {
+    sql += ' AND m.moment_date = ?'
+    params.push(parsed.data.date)
+  }
+  if (parsed.data.area) {
+    sql += ' AND m.learning_area = ?'
+    params.push(parsed.data.area)
+  }
+
+  sql += ' ORDER BY m.moment_date DESC, m.created_at DESC'
+  const rows = db.prepare(sql).all(...params) as any[]
+  const moments = rows.map((m) => enrichMoment(m, user.id))
+  res.json({ moments })
+})
+
+app.post('/api/moments', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const parsed = momentBody.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+
+  const id = randomUUID()
+  const now = new Date().toISOString()
+  const { title, groupName, learningArea, momentDate, description, imageUrl, taggedChildren } = parsed.data
+
+  db.prepare(`
+    INSERT INTO classroom_moments (id, title, group_name, learning_area, moment_date, description, image_url, tagged_children, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, title, groupName, learningArea, momentDate, description, imageUrl || null, JSON.stringify(taggedChildren || []), user.id, now)
+
+  const created = db.prepare(`${momentSelect} WHERE m.id = ?`).get(id) as any
+  res.status(201).json({ moment: enrichMoment(created, user.id) })
+})
+
+app.post('/api/moments/:id/react', requireAuth, (req, res) => {
+  const user = authed(req)
+  const moment = db.prepare('SELECT id FROM classroom_moments WHERE id = ?').get(req.params.id)
+  if (!moment) return res.status(404).json({ error: 'not_found' })
+
+  const existing = db.prepare('SELECT id FROM moment_reactions WHERE moment_id = ? AND user_id = ?').get(req.params.id, user.id) as { id: string } | undefined
+  if (existing) {
+    db.prepare('DELETE FROM moment_reactions WHERE id = ?').run(existing.id)
+  } else {
+    const rxId = randomUUID()
+    const now = new Date().toISOString()
+    db.prepare(`
+      INSERT INTO moment_reactions (id, moment_id, user_id, reaction_type, created_at)
+      VALUES (?, ?, ?, 'heart', ?)
+    `).run(rxId, req.params.id, user.id, now)
+  }
+
+  const countRow = db.prepare('SELECT COUNT(*) AS c FROM moment_reactions WHERE moment_id = ?').get(req.params.id) as { c: number }
+  res.json({
+    momentId: req.params.id,
+    reacted: !existing,
+    reactionCount: countRow?.c || 0,
+  })
+})
+
+app.delete('/api/moments/:id', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const existing = db.prepare('SELECT id FROM classroom_moments WHERE id = ?').get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'not_found' })
+
+  db.prepare('DELETE FROM classroom_moments WHERE id = ?').run(req.params.id)
+  res.json({ success: true })
+})
+
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const parsed = z.object({ date: calendarDate }).strict().safeParse(req.query)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })
