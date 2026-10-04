@@ -54,5 +54,5 @@ try {
   if (browser?.exitCode === null) { const closed = new Promise((resolve) => browser.once('exit', resolve)); browser.kill('SIGKILL'); await closed }
   await vite?.close()
   if (api?.exitCode === null) { const closed = new Promise((resolve) => api.once('exit', resolve)); api.kill('SIGTERM'); await closed }
-  await rm(directory, { recursive: true, force: true })
+  await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }

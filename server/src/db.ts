@@ -243,7 +243,68 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
     created_at TEXT NOT NULL,
     UNIQUE(moment_id, user_id, reaction_type)
   );
-  CREATE INDEX IF NOT EXISTS moment_reactions_moment ON moment_reactions(moment_id);`)
+  CREATE INDEX IF NOT EXISTS moment_reactions_moment ON moment_reactions(moment_id);
+  CREATE TABLE IF NOT EXISTS kindergarten_events (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK(event_type IN ('celebration', 'field_trip', 'conference', 'holiday', 'workshop', 'other')),
+    event_date TEXT NOT NULL,
+    end_date TEXT,
+    start_time TEXT,
+    end_time TEXT,
+    location TEXT NOT NULL,
+    group_name TEXT NOT NULL DEFAULT 'all',
+    requires_rsvp INTEGER NOT NULL DEFAULT 1 CHECK(requires_rsvp IN (0, 1)),
+    requires_permission_slip INTEGER NOT NULL DEFAULT 0 CHECK(requires_permission_slip IN (0, 1)),
+    created_by TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS kindergarten_events_date ON kindergarten_events(event_date ASC);
+  CREATE INDEX IF NOT EXISTS kindergarten_events_group ON kindergarten_events(group_name);
+  CREATE TABLE IF NOT EXISTS event_rsvps (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL REFERENCES kindergarten_events(id) ON DELETE CASCADE,
+    parent_id TEXT NOT NULL REFERENCES users(id),
+    child_id TEXT NOT NULL REFERENCES children(id),
+    status TEXT NOT NULL CHECK(status IN ('attending', 'declined', 'tentative')),
+    attending_adults INTEGER NOT NULL DEFAULT 1,
+    permission_signed INTEGER NOT NULL DEFAULT 0 CHECK(permission_signed IN (0, 1)),
+    notes TEXT,
+    updated_at TEXT NOT NULL,
+    UNIQUE(event_id, child_id)
+  );
+  CREATE INDEX IF NOT EXISTS event_rsvps_event ON event_rsvps(event_id);
+  CREATE INDEX IF NOT EXISTS event_rsvps_child ON event_rsvps(child_id);`)
+
+export type DbKindergartenEvent = {
+  id: string
+  title: string
+  description: string
+  event_type: 'celebration' | 'field_trip' | 'conference' | 'holiday' | 'workshop' | 'other'
+  event_date: string
+  end_date: string | null
+  start_time: string | null
+  end_time: string | null
+  location: string
+  group_name: string
+  requires_rsvp: number
+  requires_permission_slip: number
+  created_by: string
+  created_at: string
+}
+
+export type DbEventRsvp = {
+  id: string
+  event_id: string
+  parent_id: string
+  child_id: string
+  status: 'attending' | 'declined' | 'tentative'
+  attending_adults: number
+  permission_signed: number
+  notes: string | null
+  updated_at: string
+}
 
 export type DbClassroomMoment = {
   id: string
@@ -706,5 +767,65 @@ if (momentCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-teache
       INSERT INTO moment_reactions (id, moment_id, user_id, reaction_type, created_at)
       VALUES (?, ?, ?, ?, ?)
     `).run('rx-1', 'moment-art-1', 'u-parent', 'heart', now)
+  }
+}
+
+const eventCount = db.prepare('SELECT COUNT(*) AS c FROM kindergarten_events').get() as { c: number }
+if (eventCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-director'").get()) {
+  const insertEvent = db.prepare(`
+    INSERT INTO kindergarten_events (id, title, description, event_type, event_date, end_date, start_time, end_time, location, group_name, requires_rsvp, requires_permission_slip, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const now = new Date().toISOString()
+
+  insertEvent.run(
+    'event-farm-trip',
+    'Ekskursion Edukativ në Fermën e Kafshëve / Educational Farm Field Trip 🐑',
+    'Vizitë interaktive ku fëmijët do të ushqejnë qengjat, do të mësojnë për pemët frutore dhe do të shijojnë piknik në natyrë. / Interactive outdoor adventure where children meet farm animals and enjoy a guided nature picnic.',
+    'field_trip',
+    '2026-10-18',
+    null,
+    '09:00',
+    '13:00',
+    'Ferma Agroturistike & Parku Natyror',
+    'all',
+    1,
+    1,
+    'u-director',
+    now,
+  )
+
+  insertEvent.run(
+    'event-autumn-fest',
+    'Festa e Vjeshtës & Panairi i Kopshtit / Autumn Harvest Family Celebration 🍂',
+    'Muzikë festive, recitime, kostume me ngjyrat e vjeshtës dhe panair me punime artizanale nga të gjitha grupet! / Music performances, costume showcase, seasonal crafts exhibition and family gathering.',
+    'celebration',
+    '2026-10-25',
+    null,
+    '10:30',
+    '12:30',
+    'Oborri Qendror i Kopshtit / Main Playground',
+    'all',
+    1,
+    0,
+    'u-director',
+    now,
+  )
+
+  if (db.prepare("SELECT id FROM users WHERE id = 'u-parent'").get() && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get()) {
+    db.prepare(`
+      INSERT INTO event_rsvps (id, event_id, parent_id, child_id, status, attending_adults, permission_signed, notes, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'rsvp-1',
+      'event-farm-trip',
+      'u-parent',
+      'c-arta',
+      'attending',
+      1,
+      1,
+      'Arta mezi po pret të shohë kafshët! / Excited to visit the farm!',
+      now,
+    )
   }
 }

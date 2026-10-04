@@ -1477,6 +1477,318 @@ app.delete('/api/moments/:id', requireAuth, (req, res) => {
   res.json({ success: true })
 })
 
+const eventInputSchema = z.object({
+  title: z.string().trim().min(2).max(200),
+  description: z.string().trim().min(2).max(2000),
+  eventType: z.enum(['celebration', 'field_trip', 'conference', 'holiday', 'workshop', 'other']),
+  eventDate: calendarDate,
+  endDate: calendarDate.optional().nullable(),
+  startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional().nullable(),
+  endTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional().nullable(),
+  location: z.string().trim().min(2).max(200),
+  groupName: z.string().trim().min(1).default('all'),
+  requiresRsvp: z.boolean().default(true),
+  requiresPermissionSlip: z.boolean().default(false),
+})
+
+const rsvpInputSchema = z.object({
+  childId: z.string().min(1),
+  status: z.enum(['attending', 'declined', 'tentative']),
+  attendingAdults: z.number().int().min(1).max(10).default(1),
+  permissionSigned: z.boolean().default(false),
+  notes: z.string().max(500).optional().nullable(),
+})
+
+app.get('/api/events', requireAuth, (req, res) => {
+  const user = authed(req)
+  const month = req.query.month ? String(req.query.month) : null
+
+  if (user.role === 'parent') {
+    const parentChildren = db.prepare('SELECT id, name, group_name FROM children WHERE parent_user_id = ?').all(user.id) as { id: string; name: string; group_name: string }[]
+    const groupNames = Array.from(new Set(parentChildren.map((c) => c.group_name)))
+
+    let query = 'SELECT * FROM kindergarten_events WHERE (group_name = ?'
+    const params: any[] = ['all']
+    if (groupNames.length > 0) {
+      query += ` OR group_name IN (${groupNames.map(() => '?').join(', ')})`
+      params.push(...groupNames)
+    }
+    query += ')'
+
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+      query += ' AND event_date LIKE ?'
+      params.push(`${month}%`)
+    }
+    query += ' ORDER BY event_date ASC, start_time ASC'
+
+    const events = db.prepare(query).all(...params) as any[]
+
+    const childIds = parentChildren.map((c) => c.id)
+    const enriched = events.map((ev) => {
+      const rsvps = childIds.length > 0
+        ? db.prepare(`
+            SELECT r.*, c.name AS child_name
+            FROM event_rsvps r
+            JOIN children c ON c.id = r.child_id
+            WHERE r.event_id = ? AND r.parent_id = ?
+          `).all(ev.id, user.id) as any[]
+        : []
+
+      return {
+        id: ev.id,
+        title: ev.title,
+        description: ev.description,
+        eventType: ev.event_type,
+        eventDate: ev.event_date,
+        endDate: ev.end_date,
+        startTime: ev.start_time,
+        endTime: ev.end_time,
+        location: ev.location,
+        groupName: ev.group_name,
+        requiresRsvp: Boolean(ev.requires_rsvp),
+        requiresPermissionSlip: Boolean(ev.requires_permission_slip),
+        createdBy: ev.created_by,
+        createdAt: ev.created_at,
+        rsvps: rsvps.map((r) => ({
+          id: r.id,
+          childId: r.child_id,
+          childName: r.child_name,
+          status: r.status,
+          attendingAdults: r.attending_adults,
+          permissionSigned: Boolean(r.permission_signed),
+          notes: r.notes || '',
+          updatedAt: r.updated_at,
+        })),
+      }
+    })
+
+    return res.json({ events: enriched })
+  }
+
+  // Teacher or Director
+  let query = 'SELECT * FROM kindergarten_events'
+  const params: any[] = []
+  if (month && /^\d{4}-\d{2}$/.test(month)) {
+    query += ' WHERE event_date LIKE ?'
+    params.push(`${month}%`)
+  }
+  query += ' ORDER BY event_date ASC, start_time ASC'
+
+  const events = db.prepare(query).all(...params) as any[]
+
+  const enriched = events.map((ev) => {
+    const summaryRow = db.prepare(`
+      SELECT
+        COUNT(CASE WHEN status = 'attending' THEN 1 END) AS attending_count,
+        COUNT(CASE WHEN status = 'declined' THEN 1 END) AS declined_count,
+        COUNT(CASE WHEN status = 'tentative' THEN 1 END) AS tentative_count,
+        SUM(CASE WHEN status = 'attending' THEN attending_adults ELSE 0 END) AS total_adults,
+        COUNT(CASE WHEN permission_signed = 1 THEN 1 END) AS permission_signed_count
+      FROM event_rsvps
+      WHERE event_id = ?
+    `).get(ev.id) as any
+
+    const rsvpRows = db.prepare(`
+      SELECT r.*, c.name AS child_name, u.name AS parent_name, u.email AS parent_email
+      FROM event_rsvps r
+      JOIN children c ON c.id = r.child_id
+      JOIN users u ON u.id = r.parent_id
+      WHERE r.event_id = ?
+      ORDER BY r.updated_at DESC
+    `).all(ev.id) as any[]
+
+    return {
+      id: ev.id,
+      title: ev.title,
+      description: ev.description,
+      eventType: ev.event_type,
+      eventDate: ev.event_date,
+      endDate: ev.end_date,
+      startTime: ev.start_time,
+      endTime: ev.end_time,
+      location: ev.location,
+      groupName: ev.group_name,
+      requiresRsvp: Boolean(ev.requires_rsvp),
+      requiresPermissionSlip: Boolean(ev.requires_permission_slip),
+      createdBy: ev.created_by,
+      createdAt: ev.created_at,
+      summary: {
+        attendingCount: summaryRow?.attending_count || 0,
+        declinedCount: summaryRow?.declined_count || 0,
+        tentativeCount: summaryRow?.tentative_count || 0,
+        totalAdults: summaryRow?.total_adults || 0,
+        permissionSignedCount: summaryRow?.permission_signed_count || 0,
+      },
+      rsvps: rsvpRows.map((r) => ({
+        id: r.id,
+        childId: r.child_id,
+        childName: r.child_name,
+        parentId: r.parent_id,
+        parentName: r.parent_name,
+        parentEmail: r.parent_email,
+        status: r.status,
+        attendingAdults: r.attending_adults,
+        permissionSigned: Boolean(r.permission_signed),
+        notes: r.notes || '',
+        updatedAt: r.updated_at,
+      })),
+    }
+  })
+
+  res.json({ events: enriched })
+})
+
+app.post('/api/events', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const parsed = eventInputSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+
+  const id = randomUUID()
+  const now = new Date().toISOString()
+  const {
+    title,
+    description,
+    eventType,
+    eventDate,
+    endDate,
+    startTime,
+    endTime,
+    location,
+    groupName,
+    requiresRsvp,
+    requiresPermissionSlip,
+  } = parsed.data
+
+  db.prepare(`
+    INSERT INTO kindergarten_events (id, title, description, event_type, event_date, end_date, start_time, end_time, location, group_name, requires_rsvp, requires_permission_slip, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    title,
+    description,
+    eventType,
+    eventDate,
+    endDate || null,
+    startTime || null,
+    endTime || null,
+    location,
+    groupName,
+    requiresRsvp ? 1 : 0,
+    requiresPermissionSlip ? 1 : 0,
+    user.id,
+    now,
+  )
+
+  const created = db.prepare('SELECT * FROM kindergarten_events WHERE id = ?').get(id) as any
+  res.status(201).json({
+    event: {
+      id: created.id,
+      title: created.title,
+      description: created.description,
+      eventType: created.event_type,
+      eventDate: created.event_date,
+      endDate: created.end_date,
+      startTime: created.start_time,
+      endTime: created.end_time,
+      location: created.location,
+      groupName: created.group_name,
+      requiresRsvp: Boolean(created.requires_rsvp),
+      requiresPermissionSlip: Boolean(created.requires_permission_slip),
+      createdBy: created.created_by,
+      createdAt: created.created_at,
+      summary: {
+        attendingCount: 0,
+        declinedCount: 0,
+        tentativeCount: 0,
+        totalAdults: 0,
+        permissionSignedCount: 0,
+      },
+      rsvps: [],
+    },
+  })
+})
+
+app.delete('/api/events/:id', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const existing = db.prepare('SELECT id FROM kindergarten_events WHERE id = ?').get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'not_found' })
+
+  db.prepare('DELETE FROM kindergarten_events WHERE id = ?').run(req.params.id)
+  res.json({ success: true })
+})
+
+app.post('/api/events/:id/rsvp', requireAuth, (req, res) => {
+  const user = authed(req)
+  const parsed = rsvpInputSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+
+  const event = db.prepare('SELECT * FROM kindergarten_events WHERE id = ?').get(req.params.id) as any
+  if (!event) return res.status(404).json({ error: 'not_found' })
+
+  const child = db.prepare('SELECT * FROM children WHERE id = ?').get(parsed.data.childId) as any
+  if (!child) return res.status(404).json({ error: 'child_not_found' })
+
+  if (user.role === 'parent' && child.parent_user_id !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const existing = db.prepare('SELECT id FROM event_rsvps WHERE event_id = ? AND child_id = ?').get(req.params.id, parsed.data.childId) as { id: string } | undefined
+  const rsvpId = existing ? existing.id : randomUUID()
+  const now = new Date().toISOString()
+
+  if (existing) {
+    db.prepare(`
+      UPDATE event_rsvps
+      SET status = ?, attending_adults = ?, permission_signed = ?, notes = ?, updated_at = ?
+      WHERE id = ?
+    `).run(
+      parsed.data.status,
+      parsed.data.attendingAdults,
+      parsed.data.permissionSigned ? 1 : 0,
+      parsed.data.notes || null,
+      now,
+      rsvpId,
+    )
+  } else {
+    db.prepare(`
+      INSERT INTO event_rsvps (id, event_id, parent_id, child_id, status, attending_adults, permission_signed, notes, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      rsvpId,
+      req.params.id,
+      user.id,
+      parsed.data.childId,
+      parsed.data.status,
+      parsed.data.attendingAdults,
+      parsed.data.permissionSigned ? 1 : 0,
+      parsed.data.notes || null,
+      now,
+    )
+  }
+
+  res.json({
+    rsvp: {
+      id: rsvpId,
+      eventId: req.params.id,
+      childId: parsed.data.childId,
+      status: parsed.data.status,
+      attendingAdults: parsed.data.attendingAdults,
+      permissionSigned: parsed.data.permissionSigned,
+      notes: parsed.data.notes || '',
+      updatedAt: now,
+    },
+  })
+})
+
+
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const parsed = z.object({ date: calendarDate }).strict().safeParse(req.query)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })

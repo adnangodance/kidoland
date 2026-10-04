@@ -655,3 +655,95 @@ export async function deleteMoment(token: string, momentId: string) {
     method: 'DELETE',
   }, token)
 }
+
+export type EventType = 'celebration' | 'field_trip' | 'conference' | 'holiday' | 'workshop' | 'other'
+
+export type RsvpStatus = 'attending' | 'declined' | 'tentative'
+
+export type EventRsvp = {
+  id: string
+  childId: string
+  childName?: string
+  parentId?: string
+  parentName?: string
+  parentEmail?: string
+  status: RsvpStatus
+  attendingAdults: number
+  permissionSigned: boolean
+  notes: string
+  updatedAt: string
+}
+
+export type EventSummary = {
+  attendingCount: number
+  declinedCount: number
+  tentativeCount: number
+  totalAdults: number
+  permissionSignedCount: number
+}
+
+export type KindergartenEvent = {
+  id: string
+  title: string
+  description: string
+  eventType: EventType
+  eventDate: string
+  endDate?: string | null
+  startTime?: string | null
+  endTime?: string | null
+  location: string
+  groupName: string
+  requiresRsvp: boolean
+  requiresPermissionSlip: boolean
+  createdBy: string
+  createdAt: string
+  summary?: EventSummary
+  rsvps?: EventRsvp[]
+}
+
+export type EventInput = {
+  title: string
+  description: string
+  eventType: EventType
+  eventDate: string
+  endDate?: string | null
+  startTime?: string | null
+  endTime?: string | null
+  location: string
+  groupName?: string
+  requiresRsvp?: boolean
+  requiresPermissionSlip?: boolean
+}
+
+export type RsvpInput = {
+  childId: string
+  status: RsvpStatus
+  attendingAdults?: number
+  permissionSigned?: boolean
+  notes?: string
+}
+
+export async function listEvents(token: string, month?: string, signal?: AbortSignal) {
+  const qs = month ? `?month=${encodeURIComponent(month)}` : ''
+  return api<{ events: KindergartenEvent[] }>(`/api/events${qs}`, { signal }, token)
+}
+
+export async function createEvent(token: string, input: EventInput) {
+  return api<{ event: KindergartenEvent }>('/api/events', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function deleteEvent(token: string, id: string) {
+  return api<{ success: boolean }>(`/api/events/${id}`, {
+    method: 'DELETE',
+  }, token)
+}
+
+export async function submitEventRsvp(token: string, eventId: string, input: RsvpInput) {
+  return api<{ rsvp: EventRsvp }>(`/api/events/${eventId}/rsvp`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token)
+}

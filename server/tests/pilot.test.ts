@@ -927,3 +927,89 @@ test('classroom moments API: list, tag children with consent details, reactions,
     await f.dispose()
   }
 })
+
+test('events, calendar, and parent RSVP API: authorization, child filtering, permission slip verification, staff summary', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const director = await f.login('director')
+    const teacher = await f.login('teacher')
+    const parent = await f.login('parent')
+
+    // 1. Staff lists events - sees seeded farm trip and autumn festival with aggregate summary
+    const staffEvents = await request('events', director)
+    assert.equal(staffEvents.status, 200)
+    assert.ok(staffEvents.data.events.length >= 2)
+    const farmTrip = staffEvents.data.events.find((e: any) => e.id === 'event-farm-trip')
+    assert.ok(farmTrip)
+    assert.equal(farmTrip.eventType, 'field_trip')
+    assert.equal(farmTrip.requiresPermissionSlip, true)
+    assert.equal(farmTrip.summary.attendingCount, 1)
+    assert.equal(farmTrip.summary.permissionSignedCount, 1)
+
+    // 2. Parent lists events - sees events with child-specific RSVP
+    const parentEvents = await request('events', parent)
+    assert.equal(parentEvents.status, 200)
+    const parentTrip = parentEvents.data.events.find((e: any) => e.id === 'event-farm-trip')
+    assert.ok(parentTrip)
+    assert.equal(parentTrip.rsvps.length, 1)
+    assert.equal(parentTrip.rsvps[0].status, 'attending')
+    assert.equal(parentTrip.rsvps[0].permissionSigned, true)
+
+    // 3. Parent updates RSVP for their child (e.g. changing adults to 2)
+    const updateRsvp = await request('events/event-farm-trip/rsvp', parent, {
+      childId: 'c-arta',
+      status: 'attending',
+      attendingAdults: 2,
+      permissionSigned: true,
+      notes: 'Dy prindër do të shoqërojnë Artën!',
+    })
+    assert.equal(updateRsvp.status, 200)
+    assert.equal(updateRsvp.data.rsvp.attendingAdults, 2)
+    assert.equal(updateRsvp.data.rsvp.permissionSigned, true)
+
+    // 4. Parent cannot RSVP for a foreign child or non-existent child
+    const nonExistentChild = await request('events/event-farm-trip/rsvp', parent, {
+      childId: 'c-nonexistent',
+      status: 'attending',
+      attendingAdults: 1,
+      permissionSigned: true,
+    })
+    assert.equal(nonExistentChild.status, 404)
+
+    // 5. Parent cannot create events
+    const parentCreate = await request('events', parent, {
+      title: 'Illegal event',
+      description: 'Test',
+      eventType: 'celebration',
+      eventDate: '2026-10-30',
+      location: 'Test',
+    })
+    assert.equal(parentCreate.status, 403)
+
+    // 6. Teacher creates a new event
+    const createEvent = await request('events', teacher, {
+      title: 'Takimi i Prindërve dhe Edukatoreve / Parent-Teacher Conference',
+      description: 'Diskutim individual mbi progresin e fëmijës gjatë muajit të parë.',
+      eventType: 'conference',
+      eventDate: '2026-10-28',
+      startTime: '16:00',
+      endTime: '18:30',
+      location: 'Salla e Grupit / Classroom',
+      groupName: 'all',
+      requiresRsvp: true,
+      requiresPermissionSlip: false,
+    })
+    assert.equal(createEvent.status, 201)
+    const createdEventId = createEvent.data.event.id
+    assert.equal(createEvent.data.event.eventType, 'conference')
+
+    // 7. Teacher deletes the event
+    const delRes = await request(`events/${createdEventId}`, teacher, undefined, 'DELETE')
+    assert.equal(delRes.status, 200)
+    assert.equal(delRes.data.success, true)
+  } finally {
+    await f.dispose()
+  }
+})
