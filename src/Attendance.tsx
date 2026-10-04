@@ -2,8 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { listAttendance, listChildren, saveAttendance, type AttendanceEntry, type AttendanceStatus, type Child } from './api'
 import { createAttendanceRequests } from './attendance-requests'
 import { localCalendarDate, validDate } from './attendance-date'
-import { useAuth } from './auth'
-import { useI18n } from './i18n/LanguageContext'
+import { useAuth } from './auth-context'
+import { useI18n } from './i18n/language-context'
 import ChildAvatar from './ChildAvatar'
 
 type Attempt = { childId: string; status: AttendanceStatus }

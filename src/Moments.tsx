@@ -12,8 +12,8 @@ import {
   type LearningArea,
   type Child,
 } from './api'
-import { useAuth } from './auth'
-import { useI18n } from './i18n/LanguageContext'
+import { useAuth } from './auth-context'
+import { useI18n } from './i18n/language-context'
 import { localCalendarDate } from './attendance-date'
 import { displayDate, useAlive } from './pilot-utils'
 import ChildAvatar from './ChildAvatar'

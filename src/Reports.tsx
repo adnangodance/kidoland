@@ -2,8 +2,8 @@
 /* eslint-disable react/set-state-in-effect, react-hooks/exhaustive-deps */
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { listChildren, listReports, saveReport, saveBatchReports, type Child, type Report } from './api'
-import { useAuth } from './auth'
-import { useI18n } from './i18n/LanguageContext'
+import { useAuth } from './auth-context'
+import { useI18n } from './i18n/language-context'
 import { localCalendarDate, validDate } from './attendance-date.js'
 import { displayDate, useAlive } from './pilot-utils'
 import ChildAvatar from './ChildAvatar'

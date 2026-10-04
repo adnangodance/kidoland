@@ -10,8 +10,8 @@ import {
   type DayOfWeek,
   type Child,
 } from './api'
-import { useAuth } from './auth'
-import { useI18n } from './i18n/LanguageContext'
+import { useAuth } from './auth-context'
+import { useI18n } from './i18n/language-context'
 import { useAlive } from './pilot-utils'
 
 const DAYS: { key: DayOfWeek; labelKey: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' }[] = [

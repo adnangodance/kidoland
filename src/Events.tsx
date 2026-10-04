@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react'
-import { useAuth } from './auth'
-import { useI18n } from './i18n/LanguageContext'
+import { useAuth } from './auth-context'
+import { useI18n } from './i18n/language-context'
 import { localCalendarDate } from './attendance-date'
 import {
   listEvents,

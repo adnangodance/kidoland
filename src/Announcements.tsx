@@ -10,8 +10,8 @@ import {
   type AnnouncementInput,
   type AnnouncementPriority,
 } from './api'
-import { useAuth } from './auth'
-import { useI18n } from './i18n/LanguageContext'
+import { useAuth } from './auth-context'
+import { useI18n } from './i18n/language-context'
 import { displayDate, useAlive } from './pilot-utils'
 
 const initialDraft: AnnouncementInput = {

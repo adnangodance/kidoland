@@ -1,6 +1,4 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useMemo,
   useState,
@@ -8,19 +6,8 @@ import {
   useRef,
 } from 'react'
 import { ApiError, loginRequest, meRequest, type User } from './api'
+import { AuthContext, type AuthCtx } from './auth-context'
 
-type AuthCtx = {
-  user: User | null
-  token: string | null
-  loading: boolean
-  expired: boolean
-  bootError: boolean
-  retryBoot: () => void
-  login: (email: string, password: string) => Promise<string | null>
-  logout: () => void
-}
-
-const AuthContext = createContext<AuthCtx | null>(null)
 const TOKEN_KEY = 'kidoland.token'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -113,10 +100,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth outside provider')
-  return ctx
 }

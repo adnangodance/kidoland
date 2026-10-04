@@ -13,8 +13,8 @@ import {
   type PaymentReceipt,
   type PaymentMethod,
 } from './api'
-import { useAuth } from './auth'
-import { useI18n } from './i18n/LanguageContext'
+import { useAuth } from './auth-context'
+import { useI18n } from './i18n/language-context'
 import { localCalendarDate, validDate } from './attendance-date.js'
 import { displayDate, euro, useAlive } from './pilot-utils'
 

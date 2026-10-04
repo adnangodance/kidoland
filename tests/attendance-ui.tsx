@@ -2,8 +2,10 @@
 // mocked on this page: these UI checks never contact or mutate a database.
 import { createRoot } from 'react-dom/client'
 import Attendance from '../src/Attendance'
-import { AuthProvider, useAuth } from '../src/auth'
-import { LanguageProvider, useI18n } from '../src/i18n/LanguageContext'
+import { AuthProvider } from '../src/auth'
+import { useAuth } from '../src/auth-context'
+import { LanguageProvider } from '../src/i18n/LanguageContext'
+import { useI18n } from '../src/i18n/language-context'
 import { localCalendarDate } from '../src/attendance-date'
 import { listAttendance, type AttendanceEntry, type Child, type Role } from '../src/api'
 import '../src/index.css'

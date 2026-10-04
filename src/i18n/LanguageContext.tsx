@@ -1,23 +1,11 @@
 import {
-  createContext,
-  useContext,
   useMemo,
   useState,
   useEffect,
   type ReactNode,
 } from 'react'
 import { translations, type Lang } from './translations'
-
-type Dict = Record<keyof (typeof translations)['en'], string>
-
-type Ctx = {
-  lang: Lang
-  t: Dict
-  toggle: () => void
-  setLang: (l: Lang) => void
-}
-
-const LanguageContext = createContext<Ctx | null>(null)
+import { LanguageContext, type Dict } from './language-context'
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [lang, setLang] = useState<Lang>(() => localStorage.getItem('kidoland.language') === 'en' ? 'en' : 'sq')
@@ -34,10 +22,4 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   return (
     <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>
   )
-}
-
-export function useI18n() {
-  const ctx = useContext(LanguageContext)
-  if (!ctx) throw new Error('useI18n outside provider')
-  return ctx
 }

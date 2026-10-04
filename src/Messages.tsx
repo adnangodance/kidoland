@@ -12,8 +12,8 @@ import {
   type Child,
   type ConversationInput,
 } from './api'
-import { useAuth } from './auth'
-import { useI18n } from './i18n/LanguageContext'
+import { useAuth } from './auth-context'
+import { useI18n } from './i18n/language-context'
 import { useAlive } from './pilot-utils'
 import ChildAvatar from './ChildAvatar'
 
