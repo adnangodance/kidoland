@@ -747,3 +747,81 @@ export async function submitEventRsvp(token: string, eventId: string, input: Rsv
     body: JSON.stringify(input),
   }, token)
 }
+
+export type ShiftType = 'morning' | 'regular' | 'closing' | 'substitute'
+export type ShiftStatus = 'scheduled' | 'checked_in' | 'completed' | 'absent'
+
+export type StaffMember = {
+  id: string
+  name: string
+  role: string
+  email: string
+}
+
+export type StaffShift = {
+  id: string
+  staffId: string
+  staffName: string
+  staffRole: string
+  staffEmail: string
+  shiftDate: string
+  shiftType: ShiftType
+  startTime: string
+  endTime: string
+  groupName: string
+  status: ShiftStatus
+  notes: string
+  createdAt: string
+}
+
+export type RoomRatioStat = {
+  groupName: string
+  childrenCount: number
+  staffCount: number
+  currentRatioStr: string
+  maxRatio: number
+  maxCapacity: number
+  minEducators: number
+  isCompliant: boolean
+  status: 'optimal' | 'warning' | 'exceeded'
+}
+
+export type StaffShiftInput = {
+  staffId: string
+  shiftDate: string
+  shiftType: ShiftType
+  startTime: string
+  endTime: string
+  groupName: string
+  notes?: string
+}
+
+export async function listStaffShifts(token: string, date?: string, signal?: AbortSignal) {
+  const qs = date ? `?date=${encodeURIComponent(date)}` : ''
+  return api<{
+    date: string
+    shifts: StaffShift[]
+    roomRatios: RoomRatioStat[]
+    staffMembers: StaffMember[]
+  }>(`/api/staff-shifts${qs}`, { signal }, token)
+}
+
+export async function createStaffShift(token: string, input: StaffShiftInput) {
+  return api<{ shift: StaffShift }>('/api/staff-shifts', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function updateShiftStatus(token: string, id: string, status: ShiftStatus) {
+  return api<{ shift: StaffShift }>(`/api/staff-shifts/${id}/status`, {
+    method: 'PUT',
+    body: JSON.stringify({ status }),
+  }, token)
+}
+
+export async function deleteStaffShift(token: string, id: string) {
+  return api<{ success: boolean }>(`/api/staff-shifts/${id}`, {
+    method: 'DELETE',
+  }, token)
+}

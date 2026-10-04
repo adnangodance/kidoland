@@ -1013,3 +1013,66 @@ test('events, calendar, and parent RSVP API: authorization, child filtering, per
     await f.dispose()
   }
 })
+
+test('staff shifts and room ratio compliance API: schedule shift, check-in, live ratio calculation, and role authorization', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const director = await f.login('director')
+    const teacher = await f.login('teacher')
+    const parent = await f.login('parent')
+
+    const today = new Date().toISOString().slice(0, 10)
+
+    // 1. Staff lists shifts and room ratios
+    const listRes = await request(`staff-shifts?date=${today}`, director)
+    assert.equal(listRes.status, 200)
+    assert.ok(Array.isArray(listRes.data.shifts))
+    assert.ok(Array.isArray(listRes.data.roomRatios))
+    assert.ok(listRes.data.roomRatios.length >= 3)
+    const bumblebees = listRes.data.roomRatios.find((r: any) => r.groupName === 'Bletët / Bumblebees')
+    assert.ok(bumblebees)
+    assert.equal(bumblebees.maxRatio, 5)
+
+    // 2. Parent can view shifts for their child's group, but cannot create shifts
+    const parentList = await request(`staff-shifts?date=${today}`, parent)
+    assert.equal(parentList.status, 200)
+
+    const parentForbiddenCreate = await request('staff-shifts', parent, {
+      staffId: 'u-teacher',
+      shiftDate: today,
+      shiftType: 'morning',
+      startTime: '08:00',
+      endTime: '16:00',
+      groupName: 'Bletët / Bumblebees',
+    })
+    assert.equal(parentForbiddenCreate.status, 403)
+
+    // 3. Director schedules a new shift
+    const createRes = await request('staff-shifts', director, {
+      staffId: 'u-teacher',
+      shiftDate: today,
+      shiftType: 'closing',
+      startTime: '10:00',
+      endTime: '18:00',
+      groupName: 'Fluturat / Butterflies',
+      notes: 'Closing coverage',
+    })
+    assert.equal(createRes.status, 201)
+    const shiftId = createRes.data.shift.id
+    assert.equal(createRes.data.shift.status, 'scheduled')
+
+    // 4. Teacher checks in for the shift
+    const checkInRes = await request(`staff-shifts/${shiftId}/status`, teacher, { status: 'checked_in' }, 'PUT')
+    assert.equal(checkInRes.status, 200)
+    assert.equal(checkInRes.data.shift.status, 'checked_in')
+
+    // 5. Director deletes shift
+    const delRes = await request(`staff-shifts/${shiftId}`, director, undefined, 'DELETE')
+    assert.equal(delRes.status, 200)
+    assert.equal(delRes.data.success, true)
+  } finally {
+    await f.dispose()
+  }
+})

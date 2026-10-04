@@ -14,9 +14,10 @@ import Meals from './Meals'
 import Incidents from './Incidents'
 import Moments from './Moments'
 import { Events } from './Events'
+import { StaffShifts } from './StaffShifts'
 import './App.css'
 
-type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events'
+type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff'
 
 const DEMO = [
   { email: 'parent@kidoland.demo', password: 'parent123', roleKey: 'roleParent' as const },
@@ -93,6 +94,9 @@ function Shell() {
               <button type="button" aria-current={activeView === 'events' ? 'page' : undefined} onClick={() => go('events')}>
                 {t.navEvents}
               </button>
+              <button type="button" aria-current={activeView === 'staff' ? 'page' : undefined} onClick={() => go('staff')}>
+                {t.navStaffShifts}
+              </button>
               <button type="button" aria-current={activeView === 'children' ? 'page' : undefined} onClick={() => go('children')}>
                 {user.role === 'parent' ? t.consentTitle : t.childrenTitle}
               </button>
@@ -132,6 +136,7 @@ function Shell() {
       {user && activeView === 'incidents' && <Incidents />}
       {user && activeView === 'moments' && <Moments />}
       {user && activeView === 'events' && <Events />}
+      {user && activeView === 'staff' && <StaffShifts />}
       {user && activeView === 'children' && <Children />}
       </main>
 

@@ -2481,3 +2481,259 @@ label.choice, .login-form label.choice { display: flex; align-items: center; gap
   color: #92400e;
   line-height: 1.4;
 }
+
+/* ==========================================================================
+   Staff Shifts & Room Ratio Compliance Module
+   ========================================================================== */
+.staff-shifts-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.shift-form-card {
+  background: #f8fafc;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.shift-form-card h2 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.15rem;
+  color: #1e293b;
+}
+
+.ratio-monitor-section h2,
+.shifts-list-section h2 {
+  font-size: 1.15rem;
+  color: #0f172a;
+  margin-bottom: 0.85rem;
+}
+
+.ratio-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.ratio-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.ratio-card.optimal {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.ratio-card.warning {
+  border-color: #fde047;
+  background: #fefce8;
+}
+
+.ratio-card.exceeded {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.ratio-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ratio-card-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #1e293b;
+}
+
+.compliance-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+}
+
+.compliance-badge.optimal {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.compliance-badge.warning {
+  background: #fef9c3;
+  color: #854d0e;
+  border: 1px solid #fef08a;
+}
+
+.compliance-badge.exceeded {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.ratio-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem;
+}
+
+@media (max-width: 360px) {
+  .ratio-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.ratio-stat-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #ffffff;
+  padding: 0.4rem 0.2rem;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.ratio-stat-box.highlight {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.ratio-num {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.ratio-lbl {
+  font-size: 0.68rem;
+  color: #64748b;
+  text-align: center;
+}
+
+.ratio-progress-container {
+  height: 6px;
+  width: 100%;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.ratio-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.ratio-progress-bar.optimal {
+  background: #22c55e;
+}
+
+.ratio-progress-bar.warning {
+  background: #eab308;
+}
+
+.ratio-progress-bar.exceeded {
+  background: #ef4444;
+}
+
+.shifts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 1rem;
+}
+
+.shift-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.shift-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.staff-name {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #0f172a;
+}
+
+.shift-status-badge {
+  font-size: 0.76rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.shift-status-badge.scheduled {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.shift-status-badge.checked_in {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.shift-status-badge.completed {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.shift-status-badge.absent {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.shift-meta-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.86rem;
+  color: #334155;
+}
+
+.shift-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.shift-notes {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #64748b;
+  font-style: italic;
+  background: #f8fafc;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+}
+
+.shift-actions-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}

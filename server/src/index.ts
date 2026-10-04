@@ -1788,6 +1788,220 @@ app.post('/api/events/:id/rsvp', requireAuth, (req, res) => {
   })
 })
 
+const shiftInputSchema = z.object({
+  staffId: z.string().min(1),
+  shiftDate: calendarDate,
+  shiftType: z.enum(['morning', 'regular', 'closing', 'substitute']),
+  startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  endTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  groupName: z.string().trim().min(1),
+  notes: z.string().max(500).optional().nullable(),
+})
+
+const shiftStatusSchema = z.object({
+  status: z.enum(['scheduled', 'checked_in', 'completed', 'absent']),
+})
+
+app.get('/api/staff-shifts', requireAuth, (req, res) => {
+  const user = authed(req)
+  const targetDate = req.query.date && typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)
+    ? req.query.date
+    : new Date().toISOString().slice(0, 10)
+
+  // 1. Fetch shifts
+  let shiftsQuery = `
+    SELECT s.*, u.name AS staff_name, u.role AS staff_role, u.email AS staff_email
+    FROM staff_shifts s
+    JOIN users u ON u.id = s.staff_id
+    WHERE s.shift_date = ?
+  `
+  const params: any[] = [targetDate]
+
+  if (user.role === 'parent') {
+    const parentChildren = db.prepare('SELECT group_name FROM children WHERE parent_user_id = ?').all(user.id) as { group_name: string }[]
+    const groups = Array.from(new Set(parentChildren.map((c) => c.group_name)))
+    if (groups.length > 0) {
+      shiftsQuery += ` AND (s.group_name = 'all' OR s.group_name IN (${groups.map(() => '?').join(', ')}))`
+      params.push(...groups)
+    } else {
+      shiftsQuery += " AND s.group_name = 'all'"
+    }
+  }
+
+  shiftsQuery += ' ORDER BY s.start_time ASC'
+  const shiftRows = db.prepare(shiftsQuery).all(...params) as any[]
+
+  // 2. Calculate Room Ratios
+  const policies = db.prepare("SELECT * FROM room_ratio_policies WHERE group_name != 'all'").all() as any[]
+  const roomRatios = policies.map((pol) => {
+    const childrenPresentRow = db.prepare(`
+      SELECT COUNT(*) AS c
+      FROM attendance a
+      JOIN children c ON c.id = a.child_id
+      WHERE a.attendance_date = ? AND a.status = 'present' AND c.group_name = ?
+    `).get(targetDate, pol.group_name) as { c: number }
+
+    const activeStaffRow = db.prepare(`
+      SELECT COUNT(DISTINCT staff_id) AS c
+      FROM staff_shifts
+      WHERE shift_date = ? AND group_name = ? AND status IN ('scheduled', 'checked_in')
+    `).get(targetDate, pol.group_name) as { c: number }
+
+    const childrenCount = childrenPresentRow?.c || 0
+    const staffCount = activeStaffRow?.c || 0
+    const maxCapacity = pol.max_room_capacity
+    const maxRatio = pol.max_children_per_educator
+    const minEducators = pol.min_educators
+
+    let isCompliant = true
+    let status: 'optimal' | 'warning' | 'exceeded' = 'optimal'
+
+    if (childrenCount > 0 && staffCount < minEducators) {
+      isCompliant = false
+      status = 'exceeded'
+    } else if (staffCount > 0 && childrenCount > staffCount * maxRatio) {
+      isCompliant = false
+      status = 'exceeded'
+    } else if (staffCount > 0 && childrenCount > 0 && staffCount * maxRatio - childrenCount <= 2) {
+      status = 'warning'
+    }
+
+    const currentRatioStr = staffCount > 0
+      ? `1:${Math.ceil(childrenCount / staffCount)}`
+      : childrenCount > 0 ? 'N/A' : '0:0'
+
+    return {
+      groupName: pol.group_name,
+      childrenCount,
+      staffCount,
+      currentRatioStr,
+      maxRatio,
+      maxCapacity,
+      minEducators,
+      isCompliant,
+      status,
+    }
+  })
+
+  const staffMembers = user.role !== 'parent'
+    ? db.prepare("SELECT id, name, role, email FROM users WHERE role IN ('teacher', 'director')").all()
+    : []
+
+  res.json({
+    date: targetDate,
+    shifts: shiftRows.map((s) => ({
+      id: s.id,
+      staffId: s.staff_id,
+      staffName: s.staff_name,
+      staffRole: s.staff_role,
+      staffEmail: s.staff_email,
+      shiftDate: s.shift_date,
+      shiftType: s.shift_type,
+      startTime: s.start_time,
+      endTime: s.end_time,
+      groupName: s.group_name,
+      status: s.status,
+      notes: s.notes || '',
+      createdAt: s.created_at,
+    })),
+    roomRatios,
+    staffMembers,
+  })
+})
+
+app.post('/api/staff-shifts', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'director' && user.role !== 'teacher') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const parsed = shiftInputSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+
+  const staff = db.prepare("SELECT id, name, role, email FROM users WHERE id = ? AND role IN ('teacher', 'director')").get(parsed.data.staffId) as any
+  if (!staff) return res.status(404).json({ error: 'staff_not_found' })
+
+  const id = randomUUID()
+  const now = new Date().toISOString()
+  const { staffId, shiftDate, shiftType, startTime, endTime, groupName, notes } = parsed.data
+
+  db.prepare(`
+    INSERT INTO staff_shifts (id, staff_id, shift_date, shift_type, start_time, end_time, group_name, status, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?)
+  `).run(id, staffId, shiftDate, shiftType, startTime, endTime, groupName, notes || null, now)
+
+  res.status(201).json({
+    shift: {
+      id,
+      staffId,
+      staffName: staff.name,
+      staffRole: staff.role,
+      staffEmail: staff.email,
+      shiftDate,
+      shiftType,
+      startTime,
+      endTime,
+      groupName,
+      status: 'scheduled',
+      notes: notes || '',
+      createdAt: now,
+    },
+  })
+})
+
+app.put('/api/staff-shifts/:id/status', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'director' && user.role !== 'teacher') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const parsed = shiftStatusSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+
+  const shift = db.prepare('SELECT * FROM staff_shifts WHERE id = ?').get(req.params.id) as any
+  if (!shift) return res.status(404).json({ error: 'not_found' })
+
+  db.prepare('UPDATE staff_shifts SET status = ? WHERE id = ?').run(parsed.data.status, req.params.id)
+
+  const updated = db.prepare(`
+    SELECT s.*, u.name AS staff_name, u.role AS staff_role, u.email AS staff_email
+    FROM staff_shifts s
+    JOIN users u ON u.id = s.staff_id
+    WHERE s.id = ?
+  `).get(req.params.id) as any
+
+  res.json({
+    shift: {
+      id: updated.id,
+      staffId: updated.staff_id,
+      staffName: updated.staff_name,
+      staffRole: updated.staff_role,
+      staffEmail: updated.staff_email,
+      shiftDate: updated.shift_date,
+      shiftType: updated.shift_type,
+      startTime: updated.start_time,
+      endTime: updated.end_time,
+      groupName: updated.group_name,
+      status: updated.status,
+      notes: updated.notes || '',
+      createdAt: updated.created_at,
+    },
+  })
+})
+
+app.delete('/api/staff-shifts/:id', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const existing = db.prepare('SELECT id FROM staff_shifts WHERE id = ?').get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'not_found' })
+
+  db.prepare('DELETE FROM staff_shifts WHERE id = ?').run(req.params.id)
+  res.json({ success: true })
+})
+
 
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const parsed = z.object({ date: calendarDate }).strict().safeParse(req.query)

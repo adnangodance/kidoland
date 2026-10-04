@@ -275,7 +275,48 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
     UNIQUE(event_id, child_id)
   );
   CREATE INDEX IF NOT EXISTS event_rsvps_event ON event_rsvps(event_id);
-  CREATE INDEX IF NOT EXISTS event_rsvps_child ON event_rsvps(child_id);`)
+  CREATE INDEX IF NOT EXISTS event_rsvps_child ON event_rsvps(child_id);
+  CREATE TABLE IF NOT EXISTS staff_shifts (
+    id TEXT PRIMARY KEY,
+    staff_id TEXT NOT NULL REFERENCES users(id),
+    shift_date TEXT NOT NULL,
+    shift_type TEXT NOT NULL CHECK(shift_type IN ('morning', 'regular', 'closing', 'substitute')),
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    group_name TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('scheduled', 'checked_in', 'completed', 'absent')) DEFAULT 'scheduled',
+    notes TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS staff_shifts_date ON staff_shifts(shift_date ASC);
+  CREATE INDEX IF NOT EXISTS staff_shifts_staff ON staff_shifts(staff_id);
+  CREATE INDEX IF NOT EXISTS staff_shifts_group ON staff_shifts(group_name);
+  CREATE TABLE IF NOT EXISTS room_ratio_policies (
+    group_name TEXT PRIMARY KEY,
+    max_children_per_educator INTEGER NOT NULL DEFAULT 8,
+    max_room_capacity INTEGER NOT NULL DEFAULT 20,
+    min_educators INTEGER NOT NULL DEFAULT 1
+  );`)
+
+export type DbStaffShift = {
+  id: string
+  staff_id: string
+  shift_date: string
+  shift_type: 'morning' | 'regular' | 'closing' | 'substitute'
+  start_time: string
+  end_time: string
+  group_name: string
+  status: 'scheduled' | 'checked_in' | 'completed' | 'absent'
+  notes: string | null
+  created_at: string
+}
+
+export type DbRoomRatioPolicy = {
+  group_name: string
+  max_children_per_educator: number
+  max_room_capacity: number
+  min_educators: number
+}
 
 export type DbKindergartenEvent = {
   id: string
@@ -825,6 +866,56 @@ if (eventCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-directo
       1,
       1,
       'Arta mezi po pret të shohë kafshët! / Excited to visit the farm!',
+      now,
+    )
+  }
+}
+
+const policyCount = db.prepare('SELECT COUNT(*) AS c FROM room_ratio_policies').get() as { c: number }
+if (policyCount.c === 0) {
+  const insertPolicy = db.prepare(`
+    INSERT INTO room_ratio_policies (group_name, max_children_per_educator, max_room_capacity, min_educators)
+    VALUES (?, ?, ?, ?)
+  `)
+  insertPolicy.run('Bletët / Bumblebees', 5, 15, 2)
+  insertPolicy.run('Fluturat / Butterflies', 8, 20, 2)
+  insertPolicy.run('Yjet / Little Stars', 8, 20, 2)
+  insertPolicy.run('all', 8, 50, 2)
+}
+
+const shiftCount = db.prepare('SELECT COUNT(*) AS c FROM staff_shifts').get() as { c: number }
+if (shiftCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-teacher'").get()) {
+  const insertShift = db.prepare(`
+    INSERT INTO staff_shifts (id, staff_id, shift_date, shift_type, start_time, end_time, group_name, status, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const now = new Date().toISOString()
+  const today = now.slice(0, 10)
+
+  insertShift.run(
+    'shift-teacher-1',
+    'u-teacher',
+    today,
+    'morning',
+    '07:30',
+    '15:30',
+    'Bletët / Bumblebees',
+    'checked_in',
+    'Edukatorja kujdestare e mëngjesit / Primary morning educator',
+    now,
+  )
+
+  if (db.prepare("SELECT id FROM users WHERE id = 'u-director'").get()) {
+    insertShift.run(
+      'shift-director-1',
+      'u-director',
+      today,
+      'regular',
+      '08:30',
+      '16:30',
+      'Bletët / Bumblebees',
+      'checked_in',
+      'Mbështetje edukative & menaxhim / Classroom co-lead',
       now,
     )
   }
