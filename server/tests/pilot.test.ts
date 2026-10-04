@@ -543,3 +543,72 @@ test('authorized pickups and pickup logs API: permissions, validation, and opera
     await f.dispose()
   }
 })
+
+test('conversations and direct messaging API: permissions, validation, and threaded exchange', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const parent = await f.login('parent')
+    const teacher = await f.login('teacher')
+
+    // Unauthorized
+    assert.equal((await request('conversations')).status, 401)
+    assert.equal((await request('conversations/conv-1/messages')).status, 401)
+
+    // Parent lists seeded conversations
+    const listRes = await request('conversations', parent)
+    assert.equal(listRes.status, 200)
+    assert.equal(listRes.data.conversations.length, 1)
+    assert.equal(listRes.data.conversations[0].childName, 'Arta Krasniqi')
+    assert.equal(listRes.data.conversations[0].unreadCount, 1)
+
+    // Teacher also lists conversations
+    const teacherList = await request('conversations', teacher)
+    assert.equal(teacherList.status, 200)
+    assert.equal(teacherList.data.conversations.length, 1)
+
+    // Parent reads messages -> marks as read
+    const readRes = await request('conversations/conv-1/messages', parent)
+    assert.equal(readRes.status, 200)
+    assert.equal(readRes.data.messages.length, 2)
+    assert.equal(readRes.data.messages[0].senderRole, 'parent')
+    assert.equal(readRes.data.messages[1].senderRole, 'teacher')
+
+    // Unread count now 0 for parent
+    const listResAfterRead = await request('conversations', parent)
+    assert.equal(listResAfterRead.data.conversations[0].unreadCount, 0)
+
+    // Parent cannot create conversation for a non-existent child
+    assert.equal((await request('conversations', parent, {
+      childId: 'non-existent',
+      subject: 'Test',
+      message: 'Hello',
+    })).status, 404)
+
+    // Parent creates a new conversation
+    const newConvRes = await request('conversations', parent, {
+      childId: 'c-arta',
+      subject: 'Pyetje për ushqimin / Meal question',
+      message: 'A hëngri Arta të gjithë supën sot? / Did Arta eat all her soup today?',
+    })
+    assert.equal(newConvRes.status, 201)
+    const newConvId = newConvRes.data.conversation.id
+    assert.equal(newConvRes.data.conversation.subject, 'Pyetje për ushqimin / Meal question')
+
+    // Teacher sends a reply
+    const replyRes = await request(`conversations/${newConvId}/messages`, teacher, {
+      content: 'Po, hëngri shumë mirë dhe kërkoi edhe pak fruta! / Yes, she ate very well and asked for extra fruit!',
+    })
+    assert.equal(replyRes.status, 201)
+    assert.equal(replyRes.data.message.senderRole, 'teacher')
+
+    // Verify messages in new conversation
+    const threadRes = await request(`conversations/${newConvId}/messages`, parent)
+    assert.equal(threadRes.status, 200)
+    assert.equal(threadRes.data.messages.length, 2)
+    assert.equal(threadRes.data.messages[1].content, 'Po, hëngri shumë mirë dhe kërkoi edhe pak fruta! / Yes, she ate very well and asked for extra fruit!')
+  } finally {
+    await f.dispose()
+  }
+})

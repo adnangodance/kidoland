@@ -8,9 +8,10 @@ import Payments from './Payments'
 import Dashboard from './Dashboard'
 import Program from './Program'
 import Announcements from './Announcements'
+import Messages from './Messages'
 import './App.css'
 
-type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements'
+type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages'
 
 const DEMO = [
   { email: 'parent@kidoland.demo', password: 'parent123', roleKey: 'roleParent' as const },
@@ -69,6 +70,9 @@ function Shell() {
               <button type="button" aria-current={activeView === 'payments' ? 'page' : undefined} onClick={() => go('payments')}>
                 {t.navPayments}
               </button>
+              <button type="button" aria-current={activeView === 'messages' ? 'page' : undefined} onClick={() => go('messages')}>
+                {t.navMessages}
+              </button>
               <button type="button" aria-current={activeView === 'children' ? 'page' : undefined} onClick={() => go('children')}>
                 {user.role === 'parent' ? t.consentTitle : t.childrenTitle}
               </button>
@@ -101,6 +105,7 @@ function Shell() {
       {user && activeView === 'reports' && <Reports initialChildId={reportContext.childId} initialDate={reportContext.date} />}
       {user && activeView === 'program' && <Program initialDate={reportContext.date} />}
       {user && activeView === 'announcements' && <Announcements />}
+      {user && activeView === 'messages' && <Messages />}
       {user && activeView === 'payments' && <Payments />}
       {user && activeView === 'children' && <Children />}
       </main>

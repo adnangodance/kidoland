@@ -139,7 +139,29 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
     notes TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
   );
-  CREATE INDEX IF NOT EXISTS pickup_logs_child_date ON pickup_logs(child_id, log_date);`)
+  CREATE INDEX IF NOT EXISTS pickup_logs_child_date ON pickup_logs(child_id, log_date);
+  CREATE TABLE IF NOT EXISTS conversations (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    parent_user_id TEXT NOT NULL REFERENCES users(id),
+    subject TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS conversations_child ON conversations(child_id);
+  CREATE INDEX IF NOT EXISTS conversations_parent ON conversations(parent_user_id);
+  CREATE INDEX IF NOT EXISTS conversations_updated ON conversations(updated_at DESC);
+  CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    sender_user_id TEXT NOT NULL REFERENCES users(id),
+    sender_name TEXT NOT NULL,
+    sender_role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    read_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS messages_conversation_created ON messages(conversation_id, created_at ASC);`)
 
 export type DbUser = {
   id: string
@@ -336,4 +358,38 @@ if (pickupCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-art
     INSERT INTO pickup_logs (id, child_id, log_date, log_time, action, guardian_name, staff_user_id, notes, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run('log-1', 'c-arta', today, '08:20', 'check_in', 'Elira Krasniqi (Nëna / Mother)', 'u-teacher', 'Arrived happily', new Date().toISOString())
+}
+
+const conversationCount = db.prepare('SELECT COUNT(*) AS c FROM conversations').get() as { c: number }
+if (conversationCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get() && db.prepare("SELECT id FROM users WHERE id = 'u-parent'").get()) {
+  const now = new Date().toISOString()
+  db.prepare(`
+    INSERT INTO conversations (id, child_id, parent_user_id, subject, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run('conv-1', 'c-arta', 'u-parent', 'Shishe uji & Veshje rezervë / Water bottle & Spare clothes', now, now)
+
+  const insertMsg = db.prepare(`
+    INSERT INTO messages (id, conversation_id, sender_user_id, sender_name, sender_role, content, read_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  insertMsg.run(
+    'msg-1',
+    'conv-1',
+    'u-parent',
+    'Elira Krasniqi',
+    'parent',
+    'Përshëndetje mësuese Mira, Arta ka harruar shishen e saj të ujit në veturë sot. A ka ujë të freskët në klasë?\nHello teacher Mira, Arta forgot her water bottle in the car today. Are cups available in class?',
+    now,
+    now,
+  )
+  insertMsg.run(
+    'msg-2',
+    'conv-1',
+    'u-teacher',
+    'Mira Hoxha',
+    'teacher',
+    'Përshëndetje Elira! Mos u shqetësoni aspak, kemi gota dhe shishe rezervë të sterilizuara. Ajo po luan me shoqet e saj! 😊\nHello Elira! Don’t worry at all, we have sanitized spare cups and fresh water. She is happily playing with friends! 😊',
+    null,
+    now,
+  )
 }

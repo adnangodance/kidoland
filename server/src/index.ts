@@ -767,6 +767,157 @@ app.post('/api/children/:id/pickup-logs', requireAuth, (req, res) => {
   res.status(201).json({ log: row })
 })
 
+const conversationCreateSchema = z.object({
+  childId: z.string().trim().min(1),
+  subject: z.string().trim().min(1).max(200),
+  message: z.string().trim().min(1).max(5000),
+}).strict()
+
+const messageCreateSchema = z.object({
+  content: z.string().trim().min(1).max(5000),
+}).strict()
+
+app.get('/api/conversations', requireAuth, (req, res) => {
+  const user = authed(req)
+  let sql = `
+    SELECT c.id, c.child_id AS childId, c.parent_user_id AS parentUserId,
+           c.subject, c.created_at AS createdAt, c.updated_at AS updatedAt,
+           ch.name AS childName, ch.group_name AS groupName,
+           pu.name AS parentName,
+           (SELECT m.content FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS lastMessage,
+           (SELECT m.created_at FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS lastMessageAt,
+           (SELECT m.sender_name FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS lastSenderName,
+           (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_user_id != ? AND m.read_at IS NULL) AS unreadCount
+    FROM conversations c
+    JOIN children ch ON ch.id = c.child_id
+    JOIN users pu ON pu.id = c.parent_user_id
+  `
+  const params: unknown[] = [user.id]
+  if (user.role === 'parent') {
+    sql += ' WHERE c.parent_user_id = ?'
+    params.push(user.id)
+  }
+  sql += ' ORDER BY c.updated_at DESC'
+  const rows = db.prepare(sql).all(...params)
+  res.json({ conversations: rows })
+})
+
+app.post('/api/conversations', requireAuth, (req, res) => {
+  const user = authed(req)
+  const parsed = conversationCreateSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+  const { childId, subject, message } = parsed.data
+
+  const childRow = db.prepare('SELECT id, parent_user_id, name, group_name FROM children WHERE id = ?').get(childId) as { id: string; parent_user_id: string; name: string; group_name: string } | undefined
+  if (!childRow) return res.status(404).json({ error: 'child_not_found' })
+
+  if (user.role === 'parent' && childRow.parent_user_id !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const convId = randomUUID()
+  const msgId = randomUUID()
+  const now = new Date().toISOString()
+
+  db.prepare(`
+    INSERT INTO conversations (id, child_id, parent_user_id, subject, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(convId, childId, childRow.parent_user_id, subject, now, now)
+
+  db.prepare(`
+    INSERT INTO messages (id, conversation_id, sender_user_id, sender_name, sender_role, content, read_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(msgId, convId, user.id, user.name, user.role, message, now, now)
+
+  const createdConv = db.prepare(`
+    SELECT c.id, c.child_id AS childId, c.parent_user_id AS parentUserId,
+           c.subject, c.created_at AS createdAt, c.updated_at AS updatedAt,
+           ch.name AS childName, ch.group_name AS groupName,
+           pu.name AS parentName
+    FROM conversations c
+    JOIN children ch ON ch.id = c.child_id
+    JOIN users pu ON pu.id = c.parent_user_id
+    WHERE c.id = ?
+  `).get(convId)
+
+  const createdMsg = db.prepare(`
+    SELECT id, conversation_id AS conversationId, sender_user_id AS senderUserId,
+           sender_name AS senderName, sender_role AS senderRole, content,
+           read_at AS readAt, created_at AS createdAt
+    FROM messages WHERE id = ?
+  `).get(msgId)
+
+  res.status(201).json({ conversation: createdConv, message: createdMsg })
+})
+
+app.get('/api/conversations/:id/messages', requireAuth, (req, res) => {
+  const user = authed(req)
+  const conv = db.prepare(`
+    SELECT c.id, c.child_id AS childId, c.parent_user_id AS parentUserId,
+           c.subject, c.created_at AS createdAt, c.updated_at AS updatedAt,
+           ch.name AS childName, ch.group_name AS groupName,
+           pu.name AS parentName
+    FROM conversations c
+    JOIN children ch ON ch.id = c.child_id
+    JOIN users pu ON pu.id = c.parent_user_id
+    WHERE c.id = ?
+  `).get(req.params.id) as any
+  if (!conv) return res.status(404).json({ error: 'not_found' })
+
+  if (user.role === 'parent' && conv.parentUserId !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const now = new Date().toISOString()
+  db.prepare(`
+    UPDATE messages SET read_at = ?
+    WHERE conversation_id = ? AND sender_user_id != ? AND read_at IS NULL
+  `).run(now, req.params.id, user.id)
+
+  const messages = db.prepare(`
+    SELECT id, conversation_id AS conversationId, sender_user_id AS senderUserId,
+           sender_name AS senderName, sender_role AS senderRole, content,
+           read_at AS readAt, created_at AS createdAt
+    FROM messages
+    WHERE conversation_id = ?
+    ORDER BY created_at ASC
+  `).all(req.params.id)
+
+  res.json({ conversation: conv, messages })
+})
+
+app.post('/api/conversations/:id/messages', requireAuth, (req, res) => {
+  const user = authed(req)
+  const conv = db.prepare('SELECT id, parent_user_id FROM conversations WHERE id = ?').get(req.params.id) as { id: string; parent_user_id: string } | undefined
+  if (!conv) return res.status(404).json({ error: 'not_found' })
+
+  if (user.role === 'parent' && conv.parent_user_id !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const parsed = messageCreateSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+
+  const msgId = randomUUID()
+  const now = new Date().toISOString()
+
+  db.prepare(`
+    INSERT INTO messages (id, conversation_id, sender_user_id, sender_name, sender_role, content, read_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(msgId, req.params.id, user.id, user.name, user.role, parsed.data.content, null, now)
+
+  db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(now, req.params.id)
+
+  const createdMsg = db.prepare(`
+    SELECT id, conversation_id AS conversationId, sender_user_id AS senderUserId,
+           sender_name AS senderName, sender_role AS senderRole, content,
+           read_at AS readAt, created_at AS createdAt
+    FROM messages WHERE id = ?
+  `).get(msgId)
+
+  res.status(201).json({ message: createdMsg })
+})
+
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const parsed = z.object({ date: calendarDate }).strict().safeParse(req.query)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })

@@ -337,3 +337,58 @@ export async function recordPickupLog(token: string, childId: string, body: Pick
     body: JSON.stringify(body),
   }, token)
 }
+
+export type Conversation = {
+  id: string
+  childId: string
+  parentUserId: string
+  subject: string
+  childName: string
+  groupName: string
+  parentName: string
+  lastMessage?: string | null
+  lastMessageAt?: string | null
+  lastSenderName?: string | null
+  unreadCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ConversationInput = {
+  childId: string
+  subject: string
+  message: string
+}
+
+export type ChatMessage = {
+  id: string
+  conversationId: string
+  senderUserId: string
+  senderName: string
+  senderRole: string
+  content: string
+  readAt?: string | null
+  createdAt: string
+}
+
+export async function listConversations(token: string, signal?: AbortSignal) {
+  return api<{ conversations: Conversation[] }>('/api/conversations', { signal }, token)
+}
+
+export async function createConversation(token: string, body: ConversationInput) {
+  return api<{ conversation: Conversation; message: ChatMessage }>('/api/conversations', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }, token)
+}
+
+export async function getConversationMessages(token: string, id: string, signal?: AbortSignal) {
+  return api<{ conversation: Conversation; messages: ChatMessage[] }>(`/api/conversations/${id}/messages`, { signal }, token)
+}
+
+export async function sendChatMessage(token: string, conversationId: string, content: string) {
+  return api<{ message: ChatMessage }>(`/api/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  }, token)
+}
