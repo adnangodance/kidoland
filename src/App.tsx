@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { AuthProvider, useAuth } from './auth'
-import { LanguageProvider, useI18n } from './i18n/LanguageContext'
+import { AuthProvider } from './auth'
+import { useAuth } from './auth-context'
+import { LanguageProvider } from './i18n/LanguageContext'
+import { useI18n } from './i18n/language-context'
 import Attendance from './Attendance'
 import Children from './Children'
 import Reports from './Reports'
@@ -15,9 +17,10 @@ import Incidents from './Incidents'
 import Moments from './Moments'
 import { Events } from './Events'
 import { StaffShifts } from './StaffShifts'
+import { Milestones } from './Milestones'
 import './App.css'
 
-type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff'
+type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones'
 
 const DEMO = [
   { email: 'parent@kidoland.demo', password: 'parent123', roleKey: 'roleParent' as const },
@@ -97,6 +100,9 @@ function Shell() {
               <button type="button" aria-current={activeView === 'staff' ? 'page' : undefined} onClick={() => go('staff')}>
                 {t.navStaffShifts}
               </button>
+              <button type="button" aria-current={activeView === 'milestones' ? 'page' : undefined} onClick={() => go('milestones')}>
+                {t.navMilestones}
+              </button>
               <button type="button" aria-current={activeView === 'children' ? 'page' : undefined} onClick={() => go('children')}>
                 {user.role === 'parent' ? t.consentTitle : t.childrenTitle}
               </button>
@@ -137,6 +143,7 @@ function Shell() {
       {user && activeView === 'moments' && <Moments />}
       {user && activeView === 'events' && <Events />}
       {user && activeView === 'staff' && <StaffShifts />}
+      {user && activeView === 'milestones' && <Milestones />}
       {user && activeView === 'children' && <Children />}
       </main>
 

@@ -825,3 +825,89 @@ export async function deleteStaffShift(token: string, id: string) {
     method: 'DELETE',
   }, token)
 }
+
+export type MilestoneDomain = 'cognitive' | 'language' | 'motor' | 'social_emotional' | 'creative'
+export type MilestoneStatus = 'emerging' | 'achieved' | 'mastered'
+
+export type DevelopmentalMilestone = {
+  id: string
+  domain: MilestoneDomain
+  ageGroup: string
+  titleEn: string
+  titleSq: string
+  descriptionEn: string
+  descriptionSq: string
+  sortOrder: number
+}
+
+export type ChildMilestoneItem = {
+  milestoneId: string
+  domain: MilestoneDomain
+  ageGroup: string
+  titleEn: string
+  titleSq: string
+  descriptionEn: string
+  descriptionSq: string
+  sortOrder: number
+  recordId: string | null
+  status: MilestoneStatus | null
+  observedDate: string | null
+  notes: string
+  evaluatedBy: string | null
+  evaluatedByName: string | null
+  updatedAt: string | null
+}
+
+export type DomainStat = {
+  total: number
+  emerging: number
+  achieved: number
+  mastered: number
+  percent: number
+}
+
+export type ChildMilestonesResponse = {
+  child: {
+    id: string
+    name: string
+    groupName: string
+  }
+  items: ChildMilestoneItem[]
+  domainStats: Record<string, DomainStat>
+  summary: {
+    totalMilestones: number
+    recordedCount: number
+    masteredCount: number
+    achievedCount: number
+    emergingCount: number
+    overallProgressPercent: number
+  }
+}
+
+export type RecordMilestoneInput = {
+  milestoneId: string
+  status: MilestoneStatus
+  observedDate: string
+  notes?: string
+}
+
+export async function listMilestonesFramework(token: string, signal?: AbortSignal) {
+  return api<{ milestones: DevelopmentalMilestone[] }>('/api/milestones', { signal }, token)
+}
+
+export async function getChildMilestones(token: string, childId: string, signal?: AbortSignal) {
+  return api<ChildMilestonesResponse>(`/api/children/${childId}/milestones`, { signal }, token)
+}
+
+export async function recordChildMilestone(token: string, childId: string, input: RecordMilestoneInput) {
+  return api<{ success: boolean; record: any }>(`/api/children/${childId}/milestones`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function resetChildMilestone(token: string, childId: string, milestoneId: string) {
+  return api<{ success: boolean }>(`/api/children/${childId}/milestones/${milestoneId}`, {
+    method: 'DELETE',
+  }, token)
+}

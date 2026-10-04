@@ -2002,6 +2002,169 @@ app.delete('/api/staff-shifts/:id', requireAuth, (req, res) => {
   res.json({ success: true })
 })
 
+// --- Early Childhood Developmental Milestones (EYFS) ---
+
+const recordMilestoneSchema = z.object({
+  milestoneId: z.string().trim().min(1),
+  status: z.enum(['emerging', 'achieved', 'mastered']),
+  observedDate: calendarDate,
+  notes: z.string().trim().max(1000).optional().default(''),
+}).strict()
+
+app.get('/api/milestones', requireAuth, (_req, res) => {
+  const rows = db.prepare(`
+    SELECT id, domain, age_group AS ageGroup,
+           title_en AS titleEn, title_sq AS titleSq,
+           description_en AS descriptionEn, description_sq AS descriptionSq,
+           sort_order AS sortOrder
+    FROM developmental_milestones
+    ORDER BY domain, sort_order
+  `).all()
+  res.json({ milestones: rows })
+})
+
+app.get('/api/children/:childId/milestones', requireAuth, (req, res) => {
+  const user = authed(req)
+  const child = db.prepare('SELECT id, name, group_name AS groupName, parent_user_id AS parentUserId FROM children WHERE id = ?').get(req.params.childId) as any
+  if (!child) return res.status(404).json({ error: 'child_not_found' })
+
+  if (user.role === 'parent' && child.parentUserId !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const items = db.prepare(`
+    SELECT m.id AS milestoneId, m.domain, m.age_group AS ageGroup,
+           m.title_en AS titleEn, m.title_sq AS titleSq,
+           m.description_en AS descriptionEn, m.description_sq AS descriptionSq,
+           m.sort_order AS sortOrder,
+           r.id AS recordId, r.status, r.observed_date AS observedDate,
+           COALESCE(r.notes, '') AS notes, r.evaluated_by AS evaluatedBy,
+           u.name AS evaluatedByName, r.updated_at AS updatedAt
+    FROM developmental_milestones m
+    LEFT JOIN child_milestone_records r ON r.milestone_id = m.id AND r.child_id = ?
+    LEFT JOIN users u ON u.id = r.evaluated_by
+    ORDER BY m.domain, m.sort_order
+  `).all(req.params.childId) as any[]
+
+  const domains = ['language', 'cognitive', 'motor', 'social_emotional', 'creative'] as const
+  const domainStats: Record<string, { total: number; emerging: number; achieved: number; mastered: number; percent: number }> = {}
+
+  let totalMilestones = items.length
+  let recordedCount = 0
+  let masteredCount = 0
+  let achievedCount = 0
+  let emergingCount = 0
+
+  for (const domain of domains) {
+    const domainItems = items.filter((i) => i.domain === domain)
+    const total = domainItems.length
+    const emerging = domainItems.filter((i) => i.status === 'emerging').length
+    const achieved = domainItems.filter((i) => i.status === 'achieved').length
+    const mastered = domainItems.filter((i) => i.status === 'mastered').length
+    const percent = total > 0 ? Math.round(((emerging * 0.4 + achieved * 0.8 + mastered * 1.0) / total) * 100) : 0
+
+    domainStats[domain] = { total, emerging, achieved, mastered, percent }
+  }
+
+  for (const item of items) {
+    if (item.status) {
+      recordedCount++
+      if (item.status === 'mastered') masteredCount++
+      else if (item.status === 'achieved') achievedCount++
+      else if (item.status === 'emerging') emergingCount++
+    }
+  }
+
+  const overallProgressPercent = totalMilestones > 0
+    ? Math.round(((emergingCount * 0.4 + achievedCount * 0.8 + masteredCount * 1.0) / totalMilestones) * 100)
+    : 0
+
+  res.json({
+    child: {
+      id: child.id,
+      name: child.name,
+      groupName: child.groupName,
+    },
+    items,
+    domainStats,
+    summary: {
+      totalMilestones,
+      recordedCount,
+      masteredCount,
+      achievedCount,
+      emergingCount,
+      overallProgressPercent,
+    },
+  })
+})
+
+app.post('/api/children/:childId/milestones', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'director' && user.role !== 'teacher') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const child = db.prepare('SELECT id, name FROM children WHERE id = ?').get(req.params.childId)
+  if (!child) return res.status(404).json({ error: 'child_not_found' })
+
+  const parsed = recordMilestoneSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
+
+  const milestone = db.prepare('SELECT id FROM developmental_milestones WHERE id = ?').get(parsed.data.milestoneId)
+  if (!milestone) return res.status(404).json({ error: 'milestone_not_found' })
+
+  const recordId = `mr-${randomUUID().slice(0, 8)}`
+  const now = new Date().toISOString()
+
+  db.prepare(`
+    INSERT INTO child_milestone_records (id, child_id, milestone_id, status, observed_date, notes, evaluated_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(child_id, milestone_id) DO UPDATE SET
+      status = excluded.status,
+      observed_date = excluded.observed_date,
+      notes = excluded.notes,
+      evaluated_by = excluded.evaluated_by,
+      updated_at = excluded.updated_at
+  `).run(
+    recordId,
+    req.params.childId,
+    parsed.data.milestoneId,
+    parsed.data.status,
+    parsed.data.observedDate,
+    parsed.data.notes || '',
+    user.id,
+    now,
+  )
+
+  const updatedRecord = db.prepare(`
+    SELECT r.id AS recordId, r.status, r.observed_date AS observedDate,
+           r.notes, r.evaluated_by AS evaluatedBy, u.name AS evaluatedByName, r.updated_at AS updatedAt
+    FROM child_milestone_records r
+    JOIN users u ON u.id = r.evaluated_by
+    WHERE r.child_id = ? AND r.milestone_id = ?
+  `).get(req.params.childId, parsed.data.milestoneId)
+
+  res.status(200).json({ success: true, record: updatedRecord })
+})
+
+app.delete('/api/children/:childId/milestones/:milestoneId', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'director' && user.role !== 'teacher') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const existing = db.prepare('SELECT id FROM child_milestone_records WHERE child_id = ? AND milestone_id = ?').get(
+    req.params.childId,
+    req.params.milestoneId,
+  )
+  if (!existing) return res.status(404).json({ error: 'not_found' })
+
+  db.prepare('DELETE FROM child_milestone_records WHERE child_id = ? AND milestone_id = ?').run(
+    req.params.childId,
+    req.params.milestoneId,
+  )
+  res.json({ success: true })
+})
 
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const parsed = z.object({ date: calendarDate }).strict().safeParse(req.query)

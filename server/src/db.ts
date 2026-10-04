@@ -296,7 +296,56 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
     max_children_per_educator INTEGER NOT NULL DEFAULT 8,
     max_room_capacity INTEGER NOT NULL DEFAULT 20,
     min_educators INTEGER NOT NULL DEFAULT 1
-  );`)
+  );
+  CREATE TABLE IF NOT EXISTS developmental_milestones (
+    id TEXT PRIMARY KEY,
+    domain TEXT NOT NULL CHECK(domain IN ('cognitive', 'language', 'motor', 'social_emotional', 'creative')),
+    age_group TEXT NOT NULL,
+    title_en TEXT NOT NULL,
+    title_sq TEXT NOT NULL,
+    description_en TEXT NOT NULL,
+    description_sq TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS developmental_milestones_domain ON developmental_milestones(domain, sort_order);
+  CREATE TABLE IF NOT EXISTS child_milestone_records (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    milestone_id TEXT NOT NULL REFERENCES developmental_milestones(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK(status IN ('emerging', 'achieved', 'mastered')),
+    observed_date TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    evaluated_by TEXT NOT NULL REFERENCES users(id),
+    updated_at TEXT NOT NULL,
+    UNIQUE(child_id, milestone_id)
+  );
+  CREATE INDEX IF NOT EXISTS child_milestone_child ON child_milestone_records(child_id);
+  CREATE INDEX IF NOT EXISTS child_milestone_status ON child_milestone_records(child_id, status);`)
+
+export type MilestoneDomain = 'cognitive' | 'language' | 'motor' | 'social_emotional' | 'creative'
+export type MilestoneStatus = 'emerging' | 'achieved' | 'mastered'
+
+export type DbDevelopmentalMilestone = {
+  id: string
+  domain: MilestoneDomain
+  age_group: string
+  title_en: string
+  title_sq: string
+  description_en: string
+  description_sq: string
+  sort_order: number
+}
+
+export type DbChildMilestoneRecord = {
+  id: string
+  child_id: string
+  milestone_id: string
+  status: MilestoneStatus
+  observed_date: string
+  notes: string
+  evaluated_by: string
+  updated_at: string
+}
 
 export type DbStaffShift = {
   id: string
@@ -918,5 +967,179 @@ if (shiftCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-teacher
       'Mbështetje edukative & menaxhim / Classroom co-lead',
       now,
     )
+  }
+}
+
+const milestoneCount = db.prepare('SELECT COUNT(*) AS c FROM developmental_milestones').get() as { c: number }
+if (milestoneCount.c === 0) {
+  const insertMilestone = db.prepare(`
+    INSERT INTO developmental_milestones (id, domain, age_group, title_en, title_sq, description_en, description_sq, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+
+  // 1. Language & Communication
+  insertMilestone.run(
+    'ms-lang-1',
+    'language',
+    'preschool_3_5',
+    'Expressive Vocabulary & Full Sentences',
+    'Fjalori Shprehës & Fjali të Plota',
+    'Uses sentences of 4-6 words and expresses needs, feelings, and questions clearly.',
+    'Përdor fjali me 4-6 fjalë dhe shpreh qartë nevojat, ndjenjat dhe pyetjet e tij.',
+    1,
+  )
+  insertMilestone.run(
+    'ms-lang-2',
+    'language',
+    'preschool_3_5',
+    'Active Listening & Story Comprehension',
+    'Dëgjimi Aktiv & Kuptimi i Përrallave',
+    'Listens attentively to read-aloud stories and accurately answers who, what, and where questions.',
+    'Dëgjon me vëmendje tregimet dhe u përgjigjet saktë pyetjeve kush, çfarë dhe ku.',
+    2,
+  )
+  insertMilestone.run(
+    'ms-lang-3',
+    'language',
+    'preschool_3_5',
+    'Rhymes, Songs & Phonemic Awareness',
+    'Vjershat, Këngët & Ndërgjegjësimi Fonologjik',
+    'Recites familiar nursery rhymes, sings kindergarten songs, and identifies rhyming sounds.',
+    'Reciton vjersha të njohura, këndon këngë kopshti dhe dallon tingujt e rimuar.',
+    3,
+  )
+
+  // 2. Cognitive & Problem Solving
+  insertMilestone.run(
+    'ms-cog-1',
+    'cognitive',
+    'preschool_3_5',
+    'Counting & One-to-One Correspondence',
+    'Numërimi & Përputhja Një-për-Një',
+    'Counts up to 10 objects accurately touching each one and recognizes digits 1 to 5.',
+    'Numëron saktë deri në 10 objekte duke i prekur me gisht dhe njeh shifrat 1 deri 5.',
+    1,
+  )
+  insertMilestone.run(
+    'ms-cog-2',
+    'cognitive',
+    'preschool_3_5',
+    'Sorting & Pattern Recognition',
+    'Klasifikimi & Njohja e Modeleve (Modelet AB)',
+    'Sorts objects by multiple attributes (color, size, shape) and extends simple AB patterns.',
+    'Klasifikon lodrat sipas ngjyrës, formës apo madhësisë dhe vazhdon modele të thjeshta AB.',
+    2,
+  )
+  insertMilestone.run(
+    'ms-cog-3',
+    'cognitive',
+    'preschool_3_5',
+    'Curiosity & Problem Solving',
+    'Zgjidhja e Problemeve & Enigmat',
+    'Completes 12-24 piece puzzles independently and experiments with building blocks to balance structures.',
+    'Zgjidh puzzle me 12-24 pjesë në mënyrë të pavarur dhe eksperimenton me kuba ndërtimi.',
+    3,
+  )
+
+  // 3. Motor Skills & Physical Development
+  insertMilestone.run(
+    'ms-mot-1',
+    'motor',
+    'preschool_3_5',
+    'Fine Motor Grip & Tool Usage',
+    'Motorika Fine & Përdorimi i Mjeteve',
+    'Demonstrates functional tripod pincer grasp on writing utensils and cuts along curved lines with safety scissors.',
+    'Mban lapsin me kapje tripode dhe pret me gërshërë fëmijësh përgjatë vijave.',
+    1,
+  )
+  insertMilestone.run(
+    'ms-mot-2',
+    'motor',
+    'preschool_3_5',
+    'Gross Motor Agility & Balance',
+    'Motorika e Trashë & Ekuilibri',
+    'Hops on one foot, balances along a balance beam, and catches a bouncy ball with two hands.',
+    'Kërcen në një këmbë, mban ekuilibrin mbi tra dhe kap topin me dy duar.',
+    2,
+  )
+  insertMilestone.run(
+    'ms-mot-3',
+    'motor',
+    'preschool_3_5',
+    'Self-Care & Dressing Independence',
+    'Pavarësia në Higjienë & Veshje',
+    'Zips jacket, puts shoes on correct feet, and washes hands thoroughly with soap without supervision.',
+    'Mbyll zinxhirin e xhupit, vesh këpucët saktë dhe lan duart me sapun pa ndihmë.',
+    3,
+  )
+
+  // 4. Social-Emotional Development
+  insertMilestone.run(
+    'ms-soc-1',
+    'social_emotional',
+    'preschool_3_5',
+    'Cooperative Play & Sharing Turn-Taking',
+    'Loja Bashkëpunuese & Respektimi i Radhës',
+    'Plays cooperatively in small peer groups, negotiates turn-taking, and shares toys during free play.',
+    'Luan në grup me bashkëmoshatarët, pret radhën me mirësjellje dhe ndan lodrat.',
+    1,
+  )
+  insertMilestone.run(
+    'ms-soc-2',
+    'social_emotional',
+    'preschool_3_5',
+    'Emotional Regulation & Calm-Down',
+    'Rregullimi Emocional & Vetëqetësimi',
+    'Expresses frustrations with words rather than physical actions and utilizes classroom calm-down corner.',
+    'Shpreh pakënaqësitë me fjalë dhe përdor këndin e qetësimit për t’u vetë-rregulluar.',
+    2,
+  )
+  insertMilestone.run(
+    'ms-soc-3',
+    'social_emotional',
+    'preschool_3_5',
+    'Empathy & Caring for Peers',
+    'Empatia & Kujdesi ndaj Shokëve',
+    'Notices when a classmate is sad or hurt, offers comfort, a hug, or notifies a teacher.',
+    'Vëren kur një shok është i mërzitur ose vrarë dhe i ofron ngushëllim ose ndihmë.',
+    3,
+  )
+
+  // 5. Creative Arts & Expression
+  insertMilestone.run(
+    'ms-cre-1',
+    'creative',
+    'preschool_3_5',
+    'Representational Art & Creative Painting',
+    'Arti Figurativ & Piktura Kreative',
+    'Draws recognizable figures with details (eyes, mouth, arms) and expresses imagination through varied media.',
+    'Vizaton figura të dallueshme me detaje (sytë, goja, trupi) dhe shpreh imagjinatën me ngjyra.',
+    1,
+  )
+  insertMilestone.run(
+    'ms-cre-2',
+    'creative',
+    'preschool_3_5',
+    'Musical Movement & Dramatic Role-Play',
+    'Lëvizja Muzikore & Loja me Role',
+    'Engages deeply in imaginative dress-up role play and follows tempo and pitch changes in music.',
+    'Angazhohet me kënaqësi në lojë me role/kostume dhe përcjell ndryshimet e ritmit në muzikë.',
+    2,
+  )
+
+  // Seed initial observations for c-arta if child and teacher exist
+  if (db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get() && db.prepare("SELECT id FROM users WHERE id = 'u-teacher'").get()) {
+    const insertRecord = db.prepare(`
+      INSERT INTO child_milestone_records (id, child_id, milestone_id, status, observed_date, notes, evaluated_by, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    const today = new Date().toISOString().slice(0, 10)
+    const now = new Date().toISOString()
+
+    insertRecord.run('mr-arta-1', 'c-arta', 'ms-lang-1', 'mastered', today, 'Shprehet shumë qartë, përdor fjalor të pasur dhe bën pyetje kurioze gjatë rrethit të mëngjesit.', 'u-teacher', now)
+    insertRecord.run('mr-arta-2', 'c-arta', 'ms-lang-2', 'achieved', today, 'Dëgjon me shumë interes përrallat dhe mban mend personazhet kryesore.', 'u-teacher', now)
+    insertRecord.run('mr-arta-3', 'c-arta', 'ms-cog-1', 'mastered', today, 'Numëron lodrat deri në 10 pa asnjë hezitim apo ndihmë.', 'u-teacher', now)
+    insertRecord.run('mr-arta-4', 'c-arta', 'ms-mot-1', 'achieved', today, 'Kap lapsin me stil tripodi dhe pret letër me gërshërë sigurie.', 'u-teacher', now)
+    insertRecord.run('mr-arta-5', 'c-arta', 'ms-soc-1', 'emerging', today, 'Po mëson të ndajë lodrat e preferuara të ndërtimit gjatë lojës së lirë në grup.', 'u-teacher', now)
   }
 }

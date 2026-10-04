@@ -1076,3 +1076,80 @@ test('staff shifts and room ratio compliance API: schedule shift, check-in, live
     await f.dispose()
   }
 })
+
+test('early childhood milestones and developmental assessment tracker (EYFS)', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const director = await f.login('director')
+    const teacher = await f.login('teacher')
+    const parent = await f.login('parent')
+    const today = '2026-10-05'
+
+    // 1. Fetch milestone framework
+    const frameworkRes = await request('milestones', teacher)
+    assert.equal(frameworkRes.status, 200)
+    assert.ok(Array.isArray(frameworkRes.data.milestones))
+    assert.ok(frameworkRes.data.milestones.length >= 14)
+    assert.ok(frameworkRes.data.milestones.some((m: any) => m.domain === 'cognitive'))
+    assert.ok(frameworkRes.data.milestones.some((m: any) => m.domain === 'language'))
+
+    // 2. Parent views milestones for their child c-arta
+    const parentView = await request('children/c-arta/milestones', parent)
+    assert.equal(parentView.status, 200)
+    assert.equal(parentView.data.child.name, 'Arta Krasniqi')
+    assert.ok(parentView.data.items.length >= 14)
+    assert.ok(parentView.data.domainStats.language)
+    assert.ok(parentView.data.summary.recordedCount >= 5)
+
+    // 3. Parent cannot record milestone observation
+    const parentForbidden = await request('children/c-arta/milestones', parent, {
+      milestoneId: 'ms-cog-2',
+      status: 'achieved',
+      observedDate: today,
+      notes: 'Parent attempted record',
+    })
+    assert.equal(parentForbidden.status, 403)
+
+    // 4. Teacher records observation for milestone ms-cog-2
+    const teacherRecord = await request('children/c-arta/milestones', teacher, {
+      milestoneId: 'ms-cog-2',
+      status: 'achieved',
+      observedDate: today,
+      notes: 'Successfully sorted blocks by color and size independently.',
+    })
+    assert.equal(teacherRecord.status, 200)
+    assert.equal(teacherRecord.data.record.status, 'achieved')
+
+    // 5. Verify the updated progress stats
+    const updatedView = await request('children/c-arta/milestones', teacher)
+    assert.equal(updatedView.status, 200)
+    const cogItem = updatedView.data.items.find((i: any) => i.milestoneId === 'ms-cog-2')
+    assert.ok(cogItem)
+    assert.equal(cogItem.status, 'achieved')
+    assert.equal(cogItem.notes, 'Successfully sorted blocks by color and size independently.')
+
+    // 6. Teacher updates milestone to mastered (upsert)
+    const upsertRes = await request('children/c-arta/milestones', teacher, {
+      milestoneId: 'ms-cog-2',
+      status: 'mastered',
+      observedDate: today,
+      notes: 'Now creates advanced AB patterns with beads.',
+    })
+    assert.equal(upsertRes.status, 200)
+    assert.equal(upsertRes.data.record.status, 'mastered')
+
+    // 7. Teacher deletes/resets milestone observation
+    const delRes = await request('children/c-arta/milestones/ms-cog-2', teacher, undefined, 'DELETE')
+    assert.equal(delRes.status, 200)
+    assert.equal(delRes.data.success, true)
+
+    // 8. Verify reset
+    const finalView = await request('children/c-arta/milestones', director)
+    const finalCog = finalView.data.items.find((i: any) => i.milestoneId === 'ms-cog-2')
+    assert.equal(finalCog.status, null)
+  } finally {
+    await f.dispose()
+  }
+})
