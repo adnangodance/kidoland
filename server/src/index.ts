@@ -515,7 +515,8 @@ const invoiceSchema = z.object({
 
 const invoiceSelect = `SELECT i.id, i.child_id AS childId, c.name AS childName, c.group_name AS groupName,
   i.amount_cents AS amountCents, i.currency, i.period_label AS periodLabel,
-  i.status, i.due_date AS dueDate, i.paid_at AS paidAt, i.created_by AS createdBy,
+  i.status, i.due_date AS dueDate, i.paid_at AS paidAt, COALESCE(i.payment_method, '') AS paymentMethod,
+  COALESCE(i.transaction_ref, '') AS transactionRef, i.created_by AS createdBy,
   i.created_at AS createdAt, i.notes FROM invoices i JOIN children c ON c.id = i.child_id`
 function invoiceWithItems(row: unknown) {
   const invoice = row as { id: string }
@@ -562,8 +563,83 @@ app.patch('/api/invoices/:id/paid', requireAuth, (req, res) => {
   if (authed(req).role !== 'director') return res.status(403).json({ error: 'forbidden' })
   const row = db.prepare(`${invoiceSelect} WHERE i.id = ?`).get(req.params.id)
   if (!row) return res.status(404).json({ error: 'not_found' })
-  db.prepare("UPDATE invoices SET status = 'paid', paid_at = ? WHERE id = ? AND status = 'pending'").run(new Date().toISOString(), req.params.id)
+  db.prepare("UPDATE invoices SET status = 'paid', paid_at = ?, payment_method = 'manual' WHERE id = ? AND status = 'pending'").run(new Date().toISOString(), req.params.id)
   res.json({ invoice: invoiceWithItems(db.prepare(`${invoiceSelect} WHERE i.id = ?`).get(req.params.id)) })
+})
+
+const invoicePaySchema = z.object({
+  paymentMethod: z.enum(['card', 'bank_transfer']),
+  reference: z.string().trim().max(100).optional(),
+}).strict()
+
+app.post('/api/invoices/:id/pay', requireAuth, (req, res) => {
+  const user = authed(req)
+  const row = db.prepare(`SELECT i.id, i.status, c.parent_user_id AS parentUserId FROM invoices i JOIN children c ON c.id = i.child_id WHERE i.id = ?`).get(req.params.id) as { id: string; status: string; parentUserId: string } | undefined
+  if (!row) return res.status(404).json({ error: 'not_found' })
+
+  if (user.role === 'parent' && row.parentUserId !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  if (row.status === 'paid') {
+    return res.status(400).json({ error: 'already_paid' })
+  }
+
+  const parsed = invoicePaySchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+
+  const now = new Date().toISOString()
+  const ref = parsed.data.reference || `TXN-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 4).toUpperCase()}`
+
+  db.prepare(`
+    UPDATE invoices
+    SET status = 'paid', paid_at = ?, payment_method = ?, transaction_ref = ?
+    WHERE id = ? AND status = 'pending'
+  `).run(now, parsed.data.paymentMethod, ref, req.params.id)
+
+  const updated = db.prepare(`${invoiceSelect} WHERE i.id = ?`).get(req.params.id)
+  res.json({ invoice: invoiceWithItems(updated) })
+})
+
+app.get('/api/invoices/:id/receipt', requireAuth, (req, res) => {
+  const user = authed(req)
+  const invoiceRow = db.prepare(`
+    SELECT i.id, i.child_id AS childId, c.name AS childName, c.group_name AS groupName,
+           c.parent_user_id AS parentUserId, u.name AS parentName, u.email AS parentEmail,
+           i.amount_cents AS amountCents, i.currency, i.period_label AS periodLabel,
+           i.status, i.due_date AS dueDate, i.paid_at AS paidAt,
+           COALESCE(i.payment_method, '') AS paymentMethod,
+           COALESCE(i.transaction_ref, '') AS transactionRef,
+           i.created_at AS createdAt, i.notes
+    FROM invoices i
+    JOIN children c ON c.id = i.child_id
+    JOIN users u ON u.id = c.parent_user_id
+    WHERE i.id = ?
+  `).get(req.params.id) as any
+  if (!invoiceRow) return res.status(404).json({ error: 'not_found' })
+
+  if (user.role === 'parent' && invoiceRow.parentUserId !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const items = db.prepare('SELECT id, description, amount_cents AS amountCents FROM invoice_items WHERE invoice_id = ? ORDER BY position, id').all(invoiceRow.id)
+
+  const receipt = {
+    receiptNumber: `REC-${invoiceRow.id.slice(0, 8).toUpperCase()}`,
+    kindergarten: {
+      name: 'Kidoland Kindergarten Sh.p.k.',
+      address: 'Rruga e Kopshtit Nr. 12, Prishtinë, Kosovë',
+      taxId: '810992341',
+      iban: 'XK05 1501 0010 2030 4050',
+      bankName: 'Banka Ekonomike / NLB Banka',
+    },
+    invoice: {
+      ...invoiceRow,
+      items,
+    },
+  }
+
+  res.json({ receipt })
 })
 
 const parentSchema = z.object({ name: z.string().trim().min(1).max(200), email: z.string().trim().email().max(254), password: z.string().min(10).refine((value) => Buffer.byteLength(value, 'utf8') <= 72) }).strict()

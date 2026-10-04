@@ -1151,3 +1151,198 @@ label.choice, .login-form label.choice { display: flex; align-items: center; gap
 .new-conversation-form {
   margin-top: 1rem;
 }
+
+/* Fee presets & Invoicing */
+.fee-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+/* Modals & Dialogs */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.modal-content {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 1.25rem;
+  width: 100%;
+  max-width: 480px;
+  box-sizing: border-box;
+  margin: auto;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e8e1d6;
+}
+
+@media (max-width: 380px) {
+  .modal-backdrop {
+    padding: 0.5rem;
+  }
+  .modal-content,
+  .receipt-modal {
+    padding: 0.85rem;
+  }
+}
+
+.modal-content h2 {
+  margin-top: 0;
+  margin-bottom: 0.25rem;
+  font-size: 1.25rem;
+  color: #1c2430;
+}
+
+.card-input-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.card-input-row label {
+  flex: 1 1 120px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.bank-instructions-box {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0.85rem;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #334155;
+  word-break: break-word;
+}
+
+.bank-instructions-box p {
+  margin: 0.25rem 0;
+}
+
+.bank-instructions-box code {
+  background: #e2e8f0;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.modal-actions,
+.receipt-actions {
+  margin-top: 1.25rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Official Printable Receipt */
+.receipt-modal {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 520px;
+  box-sizing: border-box;
+  margin: auto;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.25);
+  border: 1px solid #cbd5e1;
+  color: #1c2430;
+  word-break: break-word;
+}
+
+.receipt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 2px dashed #cbd5e1;
+  padding-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.receipt-header h3 {
+  margin: 0 0 0.25rem 0;
+  color: #1a5c45;
+  font-size: 1.2rem;
+}
+
+.receipt-stamp {
+  border: 2px solid #1a5c45;
+  color: #1a5c45;
+  font-weight: 800;
+  font-size: 0.8rem;
+  letter-spacing: 1px;
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  text-transform: uppercase;
+  transform: rotate(-5deg);
+  white-space: nowrap;
+  background: #f0fdf4;
+  margin-bottom: 0.5rem;
+}
+
+.receipt-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.25rem 0;
+  font-size: 0.9rem;
+}
+
+.receipt-table th,
+.receipt-table td {
+  padding: 0.6rem 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+
+.receipt-table th:last-child,
+.receipt-table td:last-child {
+  text-align: right;
+}
+
+.receipt-table tfoot th {
+  border-top: 2px solid #0f172a;
+  border-bottom: none;
+  font-size: 1rem;
+  padding-top: 0.75rem;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .receipt-modal,
+  .receipt-modal * {
+    visibility: visible;
+  }
+  .receipt-modal {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: 100%;
+    box-shadow: none;
+    border: none;
+    padding: 0;
+  }
+  .receipt-modal .receipt-actions {
+    display: none !important;
+  }
+}

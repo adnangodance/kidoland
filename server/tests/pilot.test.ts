@@ -612,3 +612,53 @@ test('conversations and direct messaging API: permissions, validation, and threa
     await f.dispose()
   }
 })
+
+test('online payment and official invoice receipt API: parent payment, validation, and receipt generation', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const parent = await f.login('parent')
+    const director = await f.login('director')
+
+    // Director creates an invoice for c-arta
+    const invRes = await request('invoices', director, {
+      childId: 'c-arta',
+      periodLabel: 'Nëntor 2026 / November 2026',
+      dueDate: '2026-11-10',
+      items: [
+        { description: 'Tuition Fee / Pagesa Mujore', amountCents: 15000 },
+        { description: 'Fresh Meals & Snacks / Ushqimi', amountCents: 3500 },
+      ],
+      notes: 'Standard monthly care and meals',
+    })
+    assert.equal(invRes.status, 201)
+    const invoiceId = invRes.data.invoice.id
+
+    // Parent can pay own pending invoice
+    const payRes = await request(`invoices/${invoiceId}/pay`, parent, {
+      paymentMethod: 'card',
+      reference: 'TXN-CARD-TEST-12345',
+    })
+    assert.equal(payRes.status, 200)
+    assert.equal(payRes.data.invoice.status, 'paid')
+    assert.equal(payRes.data.invoice.paymentMethod, 'card')
+    assert.equal(payRes.data.invoice.transactionRef, 'TXN-CARD-TEST-12345')
+
+    // Cannot pay an already paid invoice
+    const doublePay = await request(`invoices/${invoiceId}/pay`, parent, {
+      paymentMethod: 'card',
+    })
+    assert.equal(doublePay.status, 400)
+    assert.equal(doublePay.data.error, 'already_paid')
+
+    // Parent can download/view official receipt
+    const receiptRes = await request(`invoices/${invoiceId}/receipt`, parent)
+    assert.equal(receiptRes.status, 200)
+    assert.equal(receiptRes.data.receipt.kindergarten.name, 'Kidoland Kindergarten Sh.p.k.')
+    assert.equal(receiptRes.data.receipt.invoice.amountCents, 18500)
+    assert.equal(receiptRes.data.receipt.invoice.items.length, 2)
+  } finally {
+    await f.dispose()
+  }
+})

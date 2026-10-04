@@ -60,6 +60,8 @@ export type Invoice = {
   status: 'pending' | 'paid'
   dueDate: string
   paidAt: string | null
+  paymentMethod?: string | null
+  transactionRef?: string | null
   createdBy: string
   createdAt: string
   notes: string | null
@@ -391,4 +393,32 @@ export async function sendChatMessage(token: string, conversationId: string, con
     method: 'POST',
     body: JSON.stringify({ content }),
   }, token)
+}
+
+export type PaymentMethod = 'card' | 'bank_transfer'
+
+export type PaymentReceipt = {
+  receiptNumber: string
+  kindergarten: {
+    name: string
+    address: string
+    taxId: string
+    iban: string
+    bankName: string
+  }
+  invoice: Invoice & {
+    parentName: string
+    parentEmail: string
+  }
+}
+
+export async function payInvoice(token: string, id: string, body: { paymentMethod: PaymentMethod; reference?: string }) {
+  return api<{ invoice: Invoice }>(`/api/invoices/${id}/pay`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }, token)
+}
+
+export async function getInvoiceReceipt(token: string, id: string, signal?: AbortSignal) {
+  return api<{ receipt: PaymentReceipt }>(`/api/invoices/${id}/receipt`, { signal }, token)
 }

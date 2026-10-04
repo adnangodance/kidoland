@@ -73,6 +73,13 @@ if (!childColumns.some((column) => column.name === 'photo_consent')) {
 if (!childColumns.some((column) => column.name === 'allergies')) {
   db.exec("ALTER TABLE children ADD COLUMN allergies TEXT NOT NULL DEFAULT ''")
 }
+const invoiceColumns = db.prepare('PRAGMA table_info(invoices)').all() as { name: string }[]
+if (!invoiceColumns.some((column) => column.name === 'payment_method')) {
+  db.exec("ALTER TABLE invoices ADD COLUMN payment_method TEXT DEFAULT ''")
+}
+if (!invoiceColumns.some((column) => column.name === 'transaction_ref')) {
+  db.exec("ALTER TABLE invoices ADD COLUMN transaction_ref TEXT DEFAULT ''")
+}
 db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
   id TEXT PRIMARY KEY, invoice_id TEXT NOT NULL REFERENCES invoices(id),
   description TEXT NOT NULL, amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
