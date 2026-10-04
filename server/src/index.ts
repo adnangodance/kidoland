@@ -415,6 +415,91 @@ app.post('/api/programs', requireAuth, (req, res) => {
   }
 })
 
+const announcementBodySchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  content: z.string().trim().min(1).max(5000),
+  priority: z.enum(['normal', 'important', 'urgent']).default('normal'),
+  targetGroup: z.string().trim().min(1).max(100).default('all'),
+  eventDate: calendarDate.optional().nullable(),
+}).strict()
+
+app.get('/api/announcements', requireAuth, (req, res) => {
+  const user = authed(req)
+  let rows: any[]
+  if (user.role === 'parent') {
+    const parentGroups = db.prepare('SELECT DISTINCT group_name FROM children WHERE parent_user_id = ?').all(user.id) as { group_name: string }[]
+    const groups = ['all', ...parentGroups.map((g) => g.group_name)]
+    const placeholders = groups.map(() => '?').join(',')
+    rows = db.prepare(`
+      SELECT a.id, a.title, a.content, a.priority, a.target_group AS targetGroup,
+             a.event_date AS eventDate, a.created_at AS createdAt, u.name AS authorName,
+             a.created_by AS createdBy
+      FROM announcements a
+      JOIN users u ON u.id = a.created_by
+      WHERE a.target_group IN (${placeholders})
+      ORDER BY
+        CASE a.priority WHEN 'urgent' THEN 1 WHEN 'important' THEN 2 ELSE 3 END,
+        a.created_at DESC
+    `).all(...groups)
+  } else {
+    rows = db.prepare(`
+      SELECT a.id, a.title, a.content, a.priority, a.target_group AS targetGroup,
+             a.event_date AS eventDate, a.created_at AS createdAt, u.name AS authorName,
+             a.created_by AS createdBy
+      FROM announcements a
+      JOIN users u ON u.id = a.created_by
+      ORDER BY
+        CASE a.priority WHEN 'urgent' THEN 1 WHEN 'important' THEN 2 ELSE 3 END,
+        a.created_at DESC
+    `).all()
+  }
+  res.json({ announcements: rows })
+})
+
+app.post('/api/announcements', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role === 'parent') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+  const parsed = announcementBodySchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body' })
+  }
+  const body = parsed.data
+  const id = randomUUID()
+  const createdAt = new Date().toISOString()
+  db.prepare(`
+    INSERT INTO announcements (id, title, content, priority, target_group, event_date, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, body.title, body.content, body.priority, body.targetGroup, body.eventDate || null, user.id, createdAt)
+
+  const row = db.prepare(`
+    SELECT a.id, a.title, a.content, a.priority, a.target_group AS targetGroup,
+           a.event_date AS eventDate, a.created_at AS createdAt, u.name AS authorName,
+           a.created_by AS createdBy
+    FROM announcements a
+    JOIN users u ON u.id = a.created_by
+    WHERE a.id = ?
+  `).get(id)
+  res.status(201).json({ announcement: row })
+})
+
+app.delete('/api/announcements/:id', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role === 'parent') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+  const existing = db.prepare('SELECT id, created_by FROM announcements WHERE id = ?').get(req.params.id) as { id: string; created_by: string } | undefined
+  if (!existing) {
+    return res.status(404).json({ error: 'not_found' })
+  }
+  if (user.role === 'teacher' && existing.created_by !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+  db.prepare('DELETE FROM announcements WHERE id = ?').run(req.params.id)
+  res.json({ success: true })
+})
+
 
 
 const positiveCents = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)

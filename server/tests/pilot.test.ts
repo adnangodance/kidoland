@@ -374,3 +374,80 @@ test('batch reports API and child allergies persistence', async () => {
     await f.dispose()
   }
 })
+
+test('announcements API: authorization, targeting, creation, and deletion', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const director = await f.login('director')
+    const teacher = await f.login('teacher')
+    const parent = await f.login('parent')
+
+    // Unauthorized
+    assert.equal((await request('announcements')).status, 401)
+    assert.equal((await request('announcements', undefined, { title: 'Test', content: 'Test' })).status, 401)
+
+    // Parent cannot create announcement
+    assert.equal((await request('announcements', parent, { title: 'Parent Post', content: 'Hello' })).status, 403)
+
+    // Teacher creates school-wide announcement
+    const createRes = await request('announcements', teacher, {
+      title: 'Field Trip to the Zoo',
+      content: 'Please arrive by 08:30 with backpack and water bottle.',
+      priority: 'important',
+      targetGroup: 'all',
+      eventDate: '2040-10-25',
+    })
+    assert.equal(createRes.status, 201)
+    const tripId = createRes.data.announcement.id
+    assert.equal(createRes.data.announcement.title, 'Field Trip to the Zoo')
+    assert.equal(createRes.data.announcement.priority, 'important')
+
+    // Director creates urgent alert for a specific group
+    const urgentRes = await request('announcements', director, {
+      title: 'Water play clothes needed',
+      content: 'Bring change of clothes tomorrow.',
+      priority: 'urgent',
+      targetGroup: 'Bletët / Bumblebees',
+    })
+    assert.equal(urgentRes.status, 201)
+    const urgentId = urgentRes.data.announcement.id
+
+    // Director creates notice for an unlinked group
+    const unlinkedRes = await request('announcements', director, {
+      title: 'Butterflies only',
+      content: 'Notice for unlinked group.',
+      priority: 'normal',
+      targetGroup: 'Fluturat / Butterflies',
+    })
+    assert.equal(unlinkedRes.status, 201)
+    const unlinkedId = unlinkedRes.data.announcement.id
+
+    // Parent queries announcements:
+    // Should see 'all' and 'Bletët / Bumblebees', but NOT 'Fluturat / Butterflies'
+    const parentList = await request('announcements', parent)
+    assert.equal(parentList.status, 200)
+    const titles = parentList.data.announcements.map((a: any) => a.title)
+    assert(titles.includes('Field Trip to the Zoo'))
+    assert(titles.includes('Water play clothes needed'))
+    assert(!titles.includes('Butterflies only'))
+    // Priority order: urgent first
+    assert.equal(parentList.data.announcements[0].priority, 'urgent')
+
+    // Parent cannot delete
+    assert.equal((await request(`announcements/${tripId}`, parent, undefined, 'DELETE')).status, 403)
+
+    // Teacher can delete own announcement
+    assert.equal((await request(`announcements/${tripId}`, teacher, undefined, 'DELETE')).status, 200)
+
+    // Teacher cannot delete director's announcement
+    assert.equal((await request(`announcements/${urgentId}`, teacher, undefined, 'DELETE')).status, 403)
+
+    // Director can delete any announcement
+    assert.equal((await request(`announcements/${urgentId}`, director, undefined, 'DELETE')).status, 200)
+    assert.equal((await request(`announcements/${unlinkedId}`, director, undefined, 'DELETE')).status, 200)
+  } finally {
+    await f.dispose()
+  }
+})

@@ -237,3 +237,37 @@ export async function listPrograms(token: string, date?: string, groupName?: str
 export async function saveProgram(token: string, body: ProgramInput) {
   return api<{ program: DailyProgram }>('/api/programs', { method: 'POST', body: JSON.stringify(body) }, token)
 }
+
+export type AnnouncementPriority = 'normal' | 'important' | 'urgent'
+
+export type Announcement = {
+  id: string
+  title: string
+  content: string
+  priority: AnnouncementPriority
+  targetGroup: string
+  eventDate?: string | null
+  authorName: string
+  createdBy: string
+  createdAt: string
+}
+
+export type AnnouncementInput = {
+  title: string
+  content: string
+  priority: AnnouncementPriority
+  targetGroup: string
+  eventDate?: string | null
+}
+
+export async function listAnnouncements(token: string, signal?: AbortSignal) {
+  return api<{ announcements: Announcement[] }>('/api/announcements', { signal }, token)
+}
+
+export async function createAnnouncement(token: string, body: AnnouncementInput) {
+  return api<{ announcement: Announcement }>('/api/announcements', { method: 'POST', body: JSON.stringify(body) }, token)
+}
+
+export async function deleteAnnouncement(token: string, id: string) {
+  return api<{ success: boolean }>(`/api/announcements/${id}`, { method: 'DELETE' }, token)
+}

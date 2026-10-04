@@ -106,7 +106,18 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
    updated_at TEXT NOT NULL,
    UNIQUE(group_name, program_date)
  );
- CREATE INDEX IF NOT EXISTS daily_programs_date_group ON daily_programs(program_date, group_name);`)
+ CREATE INDEX IF NOT EXISTS daily_programs_date_group ON daily_programs(program_date, group_name);
+  CREATE TABLE IF NOT EXISTS announcements (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    priority TEXT NOT NULL CHECK(priority IN ('normal', 'important', 'urgent')),
+    target_group TEXT NOT NULL DEFAULT 'all',
+    event_date TEXT,
+    created_by TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS announcements_created ON announcements(created_at DESC);`)
 
 export type DbUser = {
   id: string
@@ -257,6 +268,34 @@ if (programCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-teach
     'Ju lutem sillni çizme shiu për lojën në kopsht / Please bring rain boots for the outdoor playground.',
     'u-teacher',
     new Date().toISOString(),
+    new Date().toISOString(),
+  )
+}
+
+const announcementCount = db.prepare('SELECT COUNT(*) AS c FROM announcements').get() as { c: number }
+if (announcementCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-director'").get()) {
+  const insertAnnouncement = db.prepare(`
+    INSERT INTO announcements (id, title, content, priority, target_group, event_date, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  insertAnnouncement.run(
+    'ann-1',
+    'Mbledhja e Prindërve të Vjeshtës / Autumn Parent-Teacher Gathering',
+    'Të nderuar prindër, ju ftojmë në takimin e parë të vjeshtës për të diskutuar progresin e fëmijëve dhe aktivitetet e planifikuara.\nDear parents, you are warmly invited to our Autumn gathering to discuss children’s learning milestones and upcoming events.',
+    'important',
+    'all',
+    '2026-10-20',
+    'u-director',
+    new Date().toISOString(),
+  )
+  insertAnnouncement.run(
+    'ann-2',
+    'Dita e Frutave dhe Veshjes me Ngjyra / Colorful Fruit & Nature Day',
+    'Këtë të premte kemi ditë speciale tematike! Çdo fëmijë mund të sjellë frutin e preferuar për sallatën e përbashkët të frutave.\nThis Friday is Colorful Fruit Day! Children can bring their favorite fresh fruit for our shared healthy fruit salad activity.',
+    'normal',
+    'Bletët / Bumblebees',
+    '2026-10-16',
+    'u-teacher',
     new Date().toISOString(),
   )
 }

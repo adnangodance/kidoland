@@ -7,9 +7,10 @@ import Reports from './Reports'
 import Payments from './Payments'
 import Dashboard from './Dashboard'
 import Program from './Program'
+import Announcements from './Announcements'
 import './App.css'
 
-type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program'
+type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements'
 
 const DEMO = [
   { email: 'parent@kidoland.demo', password: 'parent123', roleKey: 'roleParent' as const },
@@ -62,6 +63,9 @@ function Shell() {
               <button type="button" aria-current={activeView === 'program' ? 'page' : undefined} onClick={() => go('program')}>
                 {t.navProgram}
               </button>
+              <button type="button" aria-current={activeView === 'announcements' ? 'page' : undefined} onClick={() => go('announcements')}>
+                {t.navAnnouncements}
+              </button>
               <button type="button" aria-current={activeView === 'payments' ? 'page' : undefined} onClick={() => go('payments')}>
                 {t.navPayments}
               </button>
@@ -96,6 +100,7 @@ function Shell() {
       {user && activeView === 'attendance' && <Attendance initialDate={reportContext.date} />}
       {user && activeView === 'reports' && <Reports initialChildId={reportContext.childId} initialDate={reportContext.date} />}
       {user && activeView === 'program' && <Program initialDate={reportContext.date} />}
+      {user && activeView === 'announcements' && <Announcements />}
       {user && activeView === 'payments' && <Payments />}
       {user && activeView === 'children' && <Children />}
       </main>
