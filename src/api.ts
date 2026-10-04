@@ -467,3 +467,39 @@ export async function deleteAbsenceNotice(token: string, id: string) {
     method: 'DELETE',
   }, token)
 }
+
+export type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday'
+
+export type WeeklyMeal = {
+  id: string
+  dayOfWeek: DayOfWeek
+  breakfast: string
+  morningSnack: string
+  lunch: string
+  afternoonSnack: string
+  allergens: string
+  notes: string
+  updatedBy: string
+  updatedAt: string
+}
+
+export type MealInput = {
+  dayOfWeek: DayOfWeek
+  breakfast: string
+  morningSnack: string
+  lunch: string
+  afternoonSnack: string
+  allergens?: string
+  notes?: string
+}
+
+export async function listWeeklyMeals(token: string, signal?: AbortSignal) {
+  return api<{ meals: WeeklyMeal[] }>('/api/meals', { signal }, token)
+}
+
+export async function updateWeeklyMeal(token: string, input: MealInput) {
+  return api<{ meal: WeeklyMeal }>('/api/meals', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token)
+}

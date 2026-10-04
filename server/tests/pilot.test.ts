@@ -721,3 +721,61 @@ test('absence notices API: permissions, date ranges, filters and cancellation', 
     await f.dispose()
   }
 })
+
+test('weekly meals API: list all days, staff update, and parent authorization', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const parent = await f.login('parent')
+    const teacher = await f.login('teacher')
+
+    // Initial list returns all 5 seeded days
+    const listRes = await request('meals', parent)
+    assert.equal(listRes.status, 200)
+    assert.equal(listRes.data.meals.length, 5)
+    assert.equal(listRes.data.meals[0].dayOfWeek, 'monday')
+    assert.equal(listRes.data.meals[4].dayOfWeek, 'friday')
+
+    // Parent cannot modify meals
+    const parentEdit = await request('meals', parent, {
+      dayOfWeek: 'monday',
+      breakfast: 'Pancakes',
+      morningSnack: 'Apples',
+      lunch: 'Soup',
+      afternoonSnack: 'Cookies',
+    })
+    assert.equal(parentEdit.status, 403)
+
+    // Invalid day returns 400
+    const invalidDay = await request('meals', teacher, {
+      dayOfWeek: 'sunday',
+      breakfast: 'Pancakes',
+      morningSnack: 'Apples',
+      lunch: 'Soup',
+      afternoonSnack: 'Cookies',
+    })
+    assert.equal(invalidDay.status, 400)
+
+    // Staff updates Tuesday menu
+    const updateRes = await request('meals', teacher, {
+      dayOfWeek: 'tuesday',
+      breakfast: 'Vezë bio dhe bukë e thekur / Organic eggs and toast',
+      morningSnack: 'Mollë dhe boronica / Apples & blueberries',
+      lunch: 'Peshk salmon me perime / Salmon fillet with roasted vegetables',
+      afternoonSnack: 'Keku shtëpie / Homemade sponge cake',
+      allergens: 'Fish / Peshk, Eggs / Vezë',
+      notes: 'Superfood Tuesday menu',
+    })
+    assert.equal(updateRes.status, 200)
+    assert.equal(updateRes.data.meal.lunch, 'Peshk salmon me perime / Salmon fillet with roasted vegetables')
+    assert.equal(updateRes.data.meal.allergens, 'Fish / Peshk, Eggs / Vezë')
+
+    // Verify persisted
+    const updatedList = await request('meals', parent)
+    const tuesday = updatedList.data.meals.find((m: { dayOfWeek: string }) => m.dayOfWeek === 'tuesday')
+    assert.equal(tuesday.lunch, 'Peshk salmon me perime / Salmon fillet with roasted vegetables')
+  } finally {
+    await f.dispose()
+  }
+})

@@ -180,7 +180,20 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
     created_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS absence_notices_child ON absence_notices(child_id, start_date, end_date);
-  CREATE INDEX IF NOT EXISTS absence_notices_dates ON absence_notices(start_date, end_date);`)
+  CREATE INDEX IF NOT EXISTS absence_notices_dates ON absence_notices(start_date, end_date);
+  CREATE TABLE IF NOT EXISTS weekly_meals (
+    id TEXT PRIMARY KEY,
+    day_of_week TEXT NOT NULL CHECK(day_of_week IN ('monday', 'tuesday', 'wednesday', 'thursday', 'friday')),
+    breakfast TEXT NOT NULL,
+    morning_snack TEXT NOT NULL,
+    lunch TEXT NOT NULL,
+    afternoon_snack TEXT NOT NULL,
+    allergens TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    updated_by TEXT NOT NULL REFERENCES users(id),
+    updated_at TEXT NOT NULL,
+    UNIQUE(day_of_week)
+  );`)
 
 export type DbUser = {
   id: string
@@ -427,5 +440,74 @@ if (absenceCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-lu
     'appointment',
     'Kontrollë rutinë tek dentisti / Pediatric dental checkup',
     new Date().toISOString(),
+  )
+}
+
+const mealCount = db.prepare('SELECT COUNT(*) AS c FROM weekly_meals').get() as { c: number }
+if (mealCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-director'").get()) {
+  const insertMeal = db.prepare(`
+    INSERT INTO weekly_meals (id, day_of_week, breakfast, morning_snack, lunch, afternoon_snack, allergens, notes, updated_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const now = new Date().toISOString()
+  insertMeal.run(
+    'meal-mon',
+    'monday',
+    'Qull tërshëre me mollë, mjaltë dhe kanellë / Oatmeal with fresh apples, honey & cinnamon',
+    'Dardha dhe mandarina të freskëta / Fresh seasonal pears & mandarins',
+    'Supë pule me perime fshati, fileto pule me pure patatesh dhe sallatë / Chicken vegetable soup, fillet with mashed potatoes & salad',
+    'Biskota tërshëre shtëpie dhe qumësht / Homemade oat cookies & warm milk',
+    'Lactose / Qumësht',
+    'Menu e pasur me fibra dhe vitamina / Rich in fiber and vitamins',
+    'u-director',
+    now,
+  )
+  insertMeal.run(
+    'meal-tue',
+    'tuesday',
+    'Vezë të ziera fshati, djathë i bardhë dhe bukë e thekur / Farm-fresh boiled eggs, cottage cheese & toast',
+    'Mollë të kuqe dhe karota të prera / Crisp apples & baby carrot sticks',
+    'Gjellë tradicionale me thjerrëza dhe perime, sallatë jeshile / Hearty lentil & vegetable stew with mixed green salad',
+    'Keku me mollë dhe çaj mali / Homemade apple sponge cake & mountain tea',
+    'Eggs / Vezë, Gluten',
+    'Dita vegjetariane e thjerrëzave / Vegetarian protein day',
+    'u-director',
+    now,
+  )
+  insertMeal.run(
+    'meal-wed',
+    'wednesday',
+    'Petulla të buta furre me reçel boronice / Baked wholewheat pancakes with blueberry jam',
+    'Banane dhe feta portokalli / Sweet bananas & sliced oranges',
+    'Supë kremoze kungulli, oriz me perime dhe qofte viçi furre / Creamy pumpkin soup, vegetable risotto & baked beef meatballs',
+    'Jogurt natyral me fruta / Natural yogurt with fresh fruit',
+    'Gluten, Lactose / Qumësht',
+    'Përgatitur me përbërës organikë lokalë / Prepared with organic local produce',
+    'u-director',
+    now,
+  )
+  insertMeal.run(
+    'meal-thu',
+    'thursday',
+    'Tost me bukë integrale, djathë dhe gjalpë / Whole-grain grilled toast with melted cheese & butter',
+    'Shalqi ose pjepër sezonal / Fresh seasonal melon slices',
+    'Fileto peshku furre me patate dhe brokoli në avull / Oven-baked fish fillet with steamed potatoes & broccoli',
+    'Pudding shtëpie me qumësht dhe kakao / Homemade mild chocolate pudding & milk',
+    'Fish / Peshk, Lactose / Qumësht',
+    'Dita e peshkut dhe Omega-3 / Fish & Omega-3 day',
+    'u-director',
+    now,
+  )
+  insertMeal.run(
+    'meal-fri',
+    'friday',
+    'Drithëra integrale me qumësht të ngrohtë dhe rrush të thatë / Whole-grain cereal flakes with warm milk & raisins',
+    'Kivi dhe pjeshkë të lëngshme / Fresh kiwi & peach slices',
+    'Makarona me salcë domatesh të freskëta dhe djathë parmixhan / Pasta with fresh tomato basil sauce & parmesan',
+    'Keku me banane shtëpie / Freshly baked banana bread',
+    'Gluten, Lactose / Qumësht',
+    'Dita e lumtur e makaronave me perime / Happy pasta & veggie day',
+    'u-director',
+    now,
   )
 }

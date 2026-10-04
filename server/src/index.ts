@@ -1087,6 +1087,67 @@ app.delete('/api/absence-notices/:id', requireAuth, (req, res) => {
   res.json({ success: true })
 })
 
+const mealSelect = `
+  SELECT id, day_of_week AS dayOfWeek, breakfast, morning_snack AS morningSnack,
+         lunch, afternoon_snack AS afternoonSnack, allergens, notes,
+         updated_by AS updatedBy, updated_at AS updatedAt
+  FROM weekly_meals
+  ORDER BY CASE day_of_week
+    WHEN 'monday' THEN 1
+    WHEN 'tuesday' THEN 2
+    WHEN 'wednesday' THEN 3
+    WHEN 'thursday' THEN 4
+    WHEN 'friday' THEN 5
+    ELSE 6
+  END
+`
+
+const mealBody = z.object({
+  dayOfWeek: z.enum(['monday', 'tuesday', 'wednesday', 'thursday', 'friday']),
+  breakfast: z.string().trim().min(1).max(500),
+  morningSnack: z.string().trim().min(1).max(500),
+  lunch: z.string().trim().min(1).max(500),
+  afternoonSnack: z.string().trim().min(1).max(500),
+  allergens: z.string().max(300).optional().default(''),
+  notes: z.string().max(1000).optional().default(''),
+}).strict()
+
+app.get('/api/meals', requireAuth, (_req, res) => {
+  const meals = db.prepare(mealSelect).all()
+  res.json({ meals })
+})
+
+app.post('/api/meals', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+  const parsed = mealBody.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+  const { dayOfWeek, breakfast, morningSnack, lunch, afternoonSnack, allergens, notes } = parsed.data
+
+  const now = new Date().toISOString()
+  const existing = db.prepare('SELECT id FROM weekly_meals WHERE day_of_week = ?').get(dayOfWeek) as { id: string } | undefined
+  const id = existing?.id || randomUUID()
+
+  db.prepare(`
+    INSERT INTO weekly_meals (id, day_of_week, breakfast, morning_snack, lunch, afternoon_snack, allergens, notes, updated_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(day_of_week) DO UPDATE SET
+      breakfast=excluded.breakfast,
+      morning_snack=excluded.morning_snack,
+      lunch=excluded.lunch,
+      afternoon_snack=excluded.afternoon_snack,
+      allergens=excluded.allergens,
+      notes=excluded.notes,
+      updated_by=excluded.updated_by,
+      updated_at=excluded.updated_at
+  `).run(id, dayOfWeek, breakfast, morningSnack, lunch, afternoonSnack, allergens, notes, user.id, now)
+
+  const meal = db.prepare(`${mealSelect.split('ORDER BY')[0]} WHERE id = ?`).get(id)
+  res.status(200).json({ meal })
+})
+
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const parsed = z.object({ date: calendarDate }).strict().safeParse(req.query)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })
