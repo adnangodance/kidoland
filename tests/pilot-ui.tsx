@@ -191,6 +191,7 @@ async function run() {
   assert(radios[0].checked && main().textContent?.includes(translations.en.notAllowed), 'failed consent save keeps draft and last confirmed permission')
   button(translations.en.attendanceRetry, main()); await until(() => main().textContent?.includes(translations.en.attendanceSaved))
   assert(main().textContent?.includes(translations.en.allowed), 'parent photo consent persists after explicit save'); fit('parent consent')
+  assert(main().textContent?.includes(translations.en.authorizedPickups), 'parent view exposes authorized pickups section')
   await nav(translations.en.navPayments); await until(() => main().querySelector('.roster-card'))
   assert(main().querySelectorAll('.roster-card').length === 1 && main().textContent?.includes('Tuition') && main().textContent?.includes('Meals') && /18[.,]01/.test(main().textContent || '') && !main().querySelector('form'), 'parent sees exact two-fee total and no payment mutation controls')
   await logout(); await login('director'); await nav(translations.en.childrenTitle); await until(() => main().querySelector('.roster-card'))

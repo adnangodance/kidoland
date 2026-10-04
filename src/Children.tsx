@@ -1,10 +1,30 @@
 /* Network effects reset pending UI and invalidate generation counters on context/unmount changes. */
 /* eslint-disable react/set-state-in-effect, react-hooks/exhaustive-deps */
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ApiError, listChildren, listParents, createChild, updateChild, createParent, saveConsent, type Child, type User, type ChildInput } from './api'
+import {
+  ApiError,
+  listChildren,
+  listParents,
+  createChild,
+  updateChild,
+  createParent,
+  saveConsent,
+  listPickups,
+  addPickup,
+  deletePickup,
+  listPickupLogs,
+  recordPickupLog,
+  type Child,
+  type User,
+  type ChildInput,
+  type AuthorizedPickup,
+  type PickupInput,
+  type PickupLog,
+} from './api'
 import { useAuth } from './auth'
 import { useI18n } from './i18n/LanguageContext'
 import { useAlive } from './pilot-utils'
+import { localCalendarDate } from './attendance-date'
 import ChildAvatar from './ChildAvatar'
 
 function Consent({ child }: { child: Child }) {
@@ -16,6 +36,38 @@ function Consent({ child }: { child: Child }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(false)
   const [success, setSuccess] = useState(false)
+
+  // Authorized Pickups & Logs
+  const [pickups, setPickups] = useState<AuthorizedPickup[]>([])
+  const [pickupsLoading, setPickupsLoading] = useState(false)
+  const [showPickupForm, setShowPickupForm] = useState(false)
+  const [pickupDraft, setPickupDraft] = useState<PickupInput>({ name: '', relationship: '', phone: '', isEmergency: false })
+  const [pickupBusy, setPickupBusy] = useState(false)
+  const [pickupError, setPickupError] = useState('')
+  const [pickupNotice, setPickupNotice] = useState('')
+  const [logs, setLogs] = useState<PickupLog[]>([])
+
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    setPickupsLoading(true)
+    const today = localCalendarDate()
+    Promise.all([
+      listPickups(token, child.id),
+      listPickupLogs(token, child.id, today),
+    ]).then(([pRes, lRes]) => {
+      if (!cancelled && alive.current) {
+        setPickups(pRes.pickups)
+        setLogs(lRes.logs)
+      }
+    }).catch(() => {
+      // quiet fallback
+    }).finally(() => {
+      if (!cancelled && alive.current) setPickupsLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [token, child.id])
+
   async function save() {
     if (!token || busy) return
     setBusy(true); setError(false); setSuccess(false)
@@ -25,6 +77,42 @@ function Consent({ child }: { child: Child }) {
     } catch { if (alive.current) setError(true) }
     finally { if (alive.current) setBusy(false) }
   }
+
+  async function handleAddPickup(e: FormEvent) {
+    e.preventDefault()
+    if (!token || pickupBusy || !pickupDraft.name.trim() || !pickupDraft.relationship.trim()) return
+    setPickupBusy(true); setPickupError(''); setPickupNotice('')
+    try {
+      const res = await addPickup(token, child.id, pickupDraft)
+      if (alive.current) {
+        setPickups((prev) => [...prev, res.pickup])
+        setPickupDraft({ name: '', relationship: '', phone: '', isEmergency: false })
+        setShowPickupForm(false)
+        setPickupNotice(t.pickupAdded)
+      }
+    } catch {
+      if (alive.current) setPickupError(t.saveError)
+    } finally {
+      if (alive.current) setPickupBusy(false)
+    }
+  }
+
+  async function handleRemovePickup(pickupId: string) {
+    if (!token || pickupBusy) return
+    setPickupBusy(true); setPickupError(''); setPickupNotice('')
+    try {
+      await deletePickup(token, child.id, pickupId)
+      if (alive.current) {
+        setPickups((prev) => prev.filter((p) => p.id !== pickupId))
+        setPickupNotice(t.pickupRemoved)
+      }
+    } catch {
+      if (alive.current) setPickupError(t.saveError)
+    } finally {
+      if (alive.current) setPickupBusy(false)
+    }
+  }
+
   return <article className="roster-card">
     <div className="card-avatar-heading"><ChildAvatar name={child.name} size={42} /><div><h2>{child.name}</h2><p className="card-subtitle">{child.groupName}</p></div></div>
     {child.allergies && <p className="allergy-badge">⚠️ <strong>{t.allergies}:</strong> {child.allergies}</p>}
@@ -36,8 +124,232 @@ function Consent({ child }: { child: Child }) {
     <button type="button" className="btn primary" disabled={busy} onClick={() => void save()}>{busy ? t.attendanceSaving : t.saveChoice}</button>
     {success && <p role="status">{t.attendanceSaved}</p>}
     {error && <p role="alert" className="form-error">{t.saveError} <button type="button" onClick={() => void save()}>{t.attendanceRetry}</button></p>}
+
+    <div className="pickups-section">
+      <div className="pickups-header">
+        <div>
+          <h3>{t.authorizedPickups}</h3>
+          <p className="card-subtitle">{t.authorizedPickupsSubtitle}</p>
+        </div>
+        <button type="button" className="btn ghost small-btn" disabled={pickupBusy} onClick={() => { setShowPickupForm(!showPickupForm); setPickupNotice(''); setPickupError('') }}>
+          {showPickupForm ? t.cancel : `+ ${t.addPickupPerson}`}
+        </button>
+      </div>
+
+      {pickupNotice && <p role="status" className="notice">{pickupNotice}</p>}
+      {pickupError && <p role="alert" className="form-error">{pickupError}</p>}
+
+      {showPickupForm && (
+        <form className="login-form pickup-form" onSubmit={handleAddPickup}>
+          <fieldset disabled={pickupBusy}>
+            <label>{t.personName}<input required maxLength={100} placeholder={t.personNamePlaceholder} value={pickupDraft.name} onChange={(e) => setPickupDraft({ ...pickupDraft, name: e.target.value })} /></label>
+            <label>{t.relationship}<input required maxLength={100} placeholder={t.relationshipPlaceholder} value={pickupDraft.relationship} onChange={(e) => setPickupDraft({ ...pickupDraft, relationship: e.target.value })} /></label>
+            <label>{t.phoneNumber}<input type="tel" required maxLength={50} placeholder="+383 44 ..." value={pickupDraft.phone} onChange={(e) => setPickupDraft({ ...pickupDraft, phone: e.target.value })} /></label>
+            <label className="choice"><input type="checkbox" checked={pickupDraft.isEmergency || false} onChange={(e) => setPickupDraft({ ...pickupDraft, isEmergency: e.target.checked })} />{t.isEmergency}</label>
+            <div className="actions">
+              <button className="btn primary">{pickupBusy ? t.attendanceSaving : t.addPickupPerson}</button>
+              <button type="button" className="btn ghost" onClick={() => setShowPickupForm(false)}>{t.cancel}</button>
+            </div>
+          </fieldset>
+        </form>
+      )}
+
+      {pickupsLoading ? <p role="status">{t.loading}</p> : pickups.length === 0 ? <p className="empty-hint">{t.noPickups}</p> : (
+        <ul className="pickup-list">
+          {pickups.map((p) => (
+            <li key={p.id} className="pickup-item">
+              <div className="pickup-details">
+                <strong>{p.name}</strong>
+                <div className="pickup-meta">
+                  <span>{p.relationship}</span> · <span>📞 {p.phone}</span>
+                  {p.isEmergency && <span className="badge emergency">{t.emergencyBadge}</span>}
+                </div>
+              </div>
+              <button type="button" className="btn ghost small-btn" disabled={pickupBusy} onClick={() => void handleRemovePickup(p.id)}>{t.pickupRemove}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {logs.length > 0 && (
+        <div className="pickup-logs-summary">
+          <h4>{t.checkIn} / {t.checkOut}</h4>
+          <ul className="pickup-log-list">
+            {logs.map((log) => (
+              <li key={log.id} className="pickup-log-item">
+                <span>{log.action === 'check_in' ? `🟢 ${t.checkedIn}` : `👋 ${t.checkedOut}`} · {log.logTime}</span>
+                <span><strong>{log.guardianName}</strong></span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   </article>
 }
+
+function StaffChildCard({
+  child,
+  director,
+  parentName,
+  busy,
+  onEdit,
+}: {
+  child: Child
+  director: boolean
+  parentName?: string
+  busy: boolean
+  onEdit: () => void
+}) {
+  const { token } = useAuth()
+  const { t } = useI18n()
+  const alive = useAlive()
+  const [pickups, setPickups] = useState<AuthorizedPickup[]>([])
+  const [logs, setLogs] = useState<PickupLog[]>([])
+  const [showLogForm, setShowLogForm] = useState(false)
+  const [action, setAction] = useState<'check_in' | 'check_out'>('check_in')
+  const [guardianName, setGuardianName] = useState('')
+  const [notes, setNotes] = useState('')
+  const [logBusy, setLogBusy] = useState(false)
+  const [logNotice, setLogNotice] = useState('')
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    if (!token || !expanded) return
+    let cancelled = false
+    const today = localCalendarDate()
+    Promise.all([
+      listPickups(token, child.id),
+      listPickupLogs(token, child.id, today),
+    ]).then(([pRes, lRes]) => {
+      if (!cancelled && alive.current) {
+        setPickups(pRes.pickups)
+        setLogs(lRes.logs)
+      }
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [token, child.id, expanded])
+
+  async function handleRecordLog(e: FormEvent) {
+    e.preventDefault()
+    if (!token || logBusy || !guardianName.trim()) return
+    setLogBusy(true); setLogNotice('')
+    const today = localCalendarDate()
+    const now = new Date()
+    const logTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    try {
+      const res = await recordPickupLog(token, child.id, {
+        logDate: today,
+        logTime,
+        action,
+        guardianName: guardianName.trim(),
+        notes: notes.trim() || undefined,
+      })
+      if (alive.current) {
+        setLogs((prev) => [res.log, ...prev])
+        setGuardianName('')
+        setNotes('')
+        setShowLogForm(false)
+        setLogNotice(t.logSaved)
+      }
+    } catch {
+      // quiet
+    } finally {
+      if (alive.current) setLogBusy(false)
+    }
+  }
+
+  return (
+    <article className="roster-card">
+      <div className="card-avatar-heading">
+        <ChildAvatar name={child.name} size={42} />
+        <div>
+          <h2>{child.name}</h2>
+          <p className="card-subtitle">{child.groupName}</p>
+        </div>
+      </div>
+      {child.allergies && <p className="allergy-badge">⚠️ <strong>{t.allergies}:</strong> {child.allergies}</p>}
+      <p>{t.permission}: <strong>{child.photoConsent ? t.allowed : t.notAllowed}</strong></p>
+      {director && parentName && <p>{t.linkedParent}: {parentName}</p>}
+
+      <div className="card-actions-row">
+        <button type="button" className="btn ghost small-btn" onClick={() => setExpanded(!expanded)}>
+          {expanded ? '▲ ' : '▼ '} {t.authorizedPickups} {logs.length > 0 ? `(${logs[0].action === 'check_in' ? '🟢' : '👋'})` : ''}
+        </button>
+        {director && (
+          <button className="btn ghost small-btn" disabled={busy} onClick={onEdit}>
+            {t.edit} · {child.name}
+          </button>
+        )}
+      </div>
+
+      {expanded && (
+        <div className="staff-pickup-panel">
+          <div className="pickup-subhead">
+            <strong>{t.authorizedPickups}:</strong>
+            <button type="button" className="btn ghost small-btn" onClick={() => setShowLogForm(!showLogForm)}>
+              {showLogForm ? t.cancel : `+ ${t.checkIn} / ${t.checkOut}`}
+            </button>
+          </div>
+
+          {logNotice && <p role="status" className="notice">{logNotice}</p>}
+
+          {showLogForm && (
+            <form className="login-form pickup-form" onSubmit={handleRecordLog}>
+              <fieldset disabled={logBusy}>
+                <label>{t.guardian}<input required maxLength={100} placeholder={t.guardianPlaceholder} value={guardianName} onChange={(e) => setGuardianName(e.target.value)} /></label>
+                <div className="log-action-toggle">
+                  <button type="button" className={`btn ${action === 'check_in' ? 'primary' : 'ghost'} small-btn`} onClick={() => setAction('check_in')}>
+                    🟢 {t.checkIn}
+                  </button>
+                  <button type="button" className={`btn ${action === 'check_out' ? 'primary' : 'ghost'} small-btn`} onClick={() => setAction('check_out')}>
+                    👋 {t.checkOut}
+                  </button>
+                </div>
+                <label>{t.pickupNotes}<input maxLength={200} placeholder={t.pickupNotes} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
+                <div className="actions">
+                  <button className="btn primary small-btn">{logBusy ? t.attendanceSaving : t.saveLog}</button>
+                  <button type="button" className="btn ghost small-btn" onClick={() => setShowLogForm(false)}>{t.cancel}</button>
+                </div>
+              </fieldset>
+            </form>
+          )}
+
+          {pickups.length === 0 ? <p className="empty-hint">{t.noPickups}</p> : (
+            <ul className="pickup-list">
+              {pickups.map((p) => (
+                <li key={p.id} className="pickup-item">
+                  <div className="pickup-details">
+                    <strong>{p.name}</strong> ({p.relationship})
+                    <div className="pickup-meta">
+                      <span>📞 {p.phone}</span>
+                      {p.isEmergency && <span className="badge emergency">{t.emergencyBadge}</span>}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {logs.length > 0 && (
+            <div className="pickup-logs-summary">
+              <strong>{t.checkIn} / {t.checkOut}:</strong>
+              <ul className="pickup-log-list">
+                {logs.map((log) => (
+                  <li key={log.id} className="pickup-log-item">
+                    <span>{log.action === 'check_in' ? `🟢 ${t.checkedIn}` : `👋 ${t.checkedOut}`} · {log.logTime}</span>
+                    <span><strong>{log.guardianName}</strong> {log.notes && `(${log.notes})`}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </article>
+  )
+}
+
 export default function Children() {
   const { user, token } = useAuth()
   const { t } = useI18n()
@@ -131,6 +443,21 @@ export default function Children() {
       </fieldset></form>}
     </>}
     {!loading && error !== 'load' && !children.length && <p>{t.attendanceEmpty}</p>}
-    {!loading && children.map((child) => user?.role === 'parent' ? <Consent key={child.id} child={child} /> : <article className="roster-card" key={child.id}><div className="card-avatar-heading"><ChildAvatar name={child.name} size={42} /><div><h2>{child.name}</h2><p className="card-subtitle">{child.groupName}</p></div></div>{child.allergies && <p className="allergy-badge">⚠️ <strong>{t.allergies}:</strong> {child.allergies}</p>}<p>{t.permission}: <strong>{child.photoConsent ? t.allowed : t.notAllowed}</strong></p>{director && <><p>{t.linkedParent}: {parents.find((p) => p.id === child.parentUserId)?.name}</p><button className="btn ghost" disabled={busy} onClick={() => { setEditing(child); setDraft({ name: child.name, groupName: child.groupName, parentUserId: child.parentUserId, allergies: child.allergies || '' }); setSuccess(false) }}>{t.edit} · {child.name}</button></>}</article>)}
+    {!loading && children.map((child) => user?.role === 'parent' ? (
+      <Consent key={child.id} child={child} />
+    ) : (
+      <StaffChildCard
+        key={child.id}
+        child={child}
+        director={director}
+        parentName={parents.find((p) => p.id === child.parentUserId)?.name}
+        busy={busy}
+        onEdit={() => {
+          setEditing(child)
+          setDraft({ name: child.name, groupName: child.groupName, parentUserId: child.parentUserId, allergies: child.allergies || '' })
+          setSuccess(false)
+        }}
+      />
+    ))}
   </section>
 }

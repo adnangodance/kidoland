@@ -271,3 +271,69 @@ export async function createAnnouncement(token: string, body: AnnouncementInput)
 export async function deleteAnnouncement(token: string, id: string) {
   return api<{ success: boolean }>(`/api/announcements/${id}`, { method: 'DELETE' }, token)
 }
+
+export type AuthorizedPickup = {
+  id: string
+  childId: string
+  name: string
+  relationship: string
+  phone: string
+  isEmergency: boolean
+  createdAt: string
+}
+
+export type PickupInput = {
+  name: string
+  relationship: string
+  phone: string
+  isEmergency?: boolean
+}
+
+export type PickupLog = {
+  id: string
+  childId: string
+  logDate: string
+  logTime: string
+  action: 'check_in' | 'check_out'
+  guardianName: string
+  staffName: string
+  notes?: string
+  createdAt: string
+}
+
+export type PickupLogInput = {
+  logDate: string
+  logTime: string
+  action: 'check_in' | 'check_out'
+  guardianName: string
+  notes?: string
+}
+
+export async function listPickups(token: string, childId: string, signal?: AbortSignal) {
+  return api<{ pickups: AuthorizedPickup[] }>(`/api/children/${childId}/pickups`, { signal }, token)
+}
+
+export async function addPickup(token: string, childId: string, body: PickupInput) {
+  return api<{ pickup: AuthorizedPickup }>(`/api/children/${childId}/pickups`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }, token)
+}
+
+export async function deletePickup(token: string, childId: string, pickupId: string) {
+  return api<{ success: boolean }>(`/api/children/${childId}/pickups/${pickupId}`, {
+    method: 'DELETE',
+  }, token)
+}
+
+export async function listPickupLogs(token: string, childId: string, date?: string, signal?: AbortSignal) {
+  const query = date ? `?date=${date}` : ''
+  return api<{ logs: PickupLog[] }>(`/api/children/${childId}/pickup-logs${query}`, { signal }, token)
+}
+
+export async function recordPickupLog(token: string, childId: string, body: PickupLogInput) {
+  return api<{ log: PickupLog }>(`/api/children/${childId}/pickup-logs`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }, token)
+}

@@ -629,6 +629,144 @@ app.patch('/api/children/:id/consent', requireAuth, (req, res) => {
   db.prepare('UPDATE children SET photo_consent = ? WHERE id = ? AND parent_user_id = ?').run(Number(parsed.data.photoConsent), req.params.id, user.id)
   res.json({ child: childRow(String(req.params.id)) })
 })
+
+const pickupPersonSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  relationship: z.string().trim().min(1).max(100),
+  phone: z.string().trim().min(1).max(50),
+  isEmergency: z.boolean().default(false),
+}).strict()
+
+function verifyChildAccess(childId: string, user: { id: string; role: string }) {
+  const child = db.prepare('SELECT id, parent_user_id FROM children WHERE id = ?').get(childId) as { id: string; parent_user_id: string } | undefined
+  if (!child) return { status: 404, error: 'child_not_found' }
+  if (user.role === 'parent' && child.parent_user_id !== user.id) {
+    return { status: 403, error: 'forbidden' }
+  }
+  return { status: 200, child }
+}
+
+app.get('/api/children/:id/pickups', requireAuth, (req, res) => {
+  const user = authed(req)
+  const access = verifyChildAccess(String(req.params.id), user)
+  if (access.status !== 200) return res.status(access.status).json({ error: access.error })
+
+  const rows = db.prepare(`
+    SELECT id, child_id AS childId, name, relationship, phone, is_emergency AS isEmergency, created_at AS createdAt
+    FROM authorized_pickups
+    WHERE child_id = ?
+    ORDER BY is_emergency DESC, created_at ASC
+  `).all(req.params.id)
+    .map((row) => ({ ...(row as object), isEmergency: Boolean((row as { isEmergency: number }).isEmergency) }))
+  res.json({ pickups: rows })
+})
+
+app.post('/api/children/:id/pickups', requireAuth, (req, res) => {
+  const user = authed(req)
+  const access = verifyChildAccess(String(req.params.id), user)
+  if (access.status !== 200) return res.status(access.status).json({ error: access.error })
+
+  if (user.role !== 'parent' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const parsed = pickupPersonSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+  const body = parsed.data
+  const id = randomUUID()
+  const now = new Date().toISOString()
+  db.prepare(`
+    INSERT INTO authorized_pickups (id, child_id, name, relationship, phone, is_emergency, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, req.params.id, body.name, body.relationship, body.phone, Number(body.isEmergency), now)
+
+  const row = db.prepare(`
+    SELECT id, child_id AS childId, name, relationship, phone, is_emergency AS isEmergency, created_at AS createdAt
+    FROM authorized_pickups WHERE id = ?
+  `).get(id) as { isEmergency: number }
+  res.status(201).json({ pickup: { ...row, isEmergency: Boolean(row.isEmergency) } })
+})
+
+app.delete('/api/children/:id/pickups/:pickupId', requireAuth, (req, res) => {
+  const user = authed(req)
+  const access = verifyChildAccess(String(req.params.id), user)
+  if (access.status !== 200) return res.status(access.status).json({ error: access.error })
+
+  if (user.role !== 'parent' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const existing = db.prepare('SELECT id FROM authorized_pickups WHERE id = ? AND child_id = ?').get(req.params.pickupId, req.params.id)
+  if (!existing) return res.status(404).json({ error: 'not_found' })
+
+  db.prepare('DELETE FROM authorized_pickups WHERE id = ?').run(req.params.pickupId)
+  res.json({ success: true })
+})
+
+const pickupLogSchema = z.object({
+  logDate: calendarDate,
+  logTime: z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  action: z.enum(['check_in', 'check_out']),
+  guardianName: z.string().trim().min(1).max(100),
+  notes: z.string().max(1000).optional().default(''),
+}).strict()
+
+app.get('/api/children/:id/pickup-logs', requireAuth, (req, res) => {
+  const user = authed(req)
+  const access = verifyChildAccess(String(req.params.id), user)
+  if (access.status !== 200) return res.status(access.status).json({ error: access.error })
+
+  const parsed = z.object({ date: calendarDate.optional() }).strict().safeParse(req.query)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })
+
+  let sql = `
+    SELECT l.id, l.child_id AS childId, l.log_date AS logDate, l.log_time AS logTime,
+           l.action, l.guardian_name AS guardianName, l.notes, l.created_at AS createdAt,
+           u.name AS staffName
+    FROM pickup_logs l
+    JOIN users u ON u.id = l.staff_user_id
+    WHERE l.child_id = ?
+  `
+  const params: any[] = [req.params.id]
+  if (parsed.data.date) {
+    sql += ' AND l.log_date = ?'
+    params.push(parsed.data.date)
+  }
+  sql += ' ORDER BY l.log_date DESC, l.log_time DESC'
+
+  const rows = db.prepare(sql).all(...params)
+  res.json({ logs: rows })
+})
+
+app.post('/api/children/:id/pickup-logs', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role === 'parent') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+  const access = verifyChildAccess(String(req.params.id), user)
+  if (access.status !== 200) return res.status(access.status).json({ error: access.error })
+
+  const parsed = pickupLogSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+  const body = parsed.data
+  const id = randomUUID()
+  const now = new Date().toISOString()
+  db.prepare(`
+    INSERT INTO pickup_logs (id, child_id, log_date, log_time, action, guardian_name, staff_user_id, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, req.params.id, body.logDate, body.logTime, body.action, body.guardianName, user.id, body.notes, now)
+
+  const row = db.prepare(`
+    SELECT l.id, l.child_id AS childId, l.log_date AS logDate, l.log_time AS logTime,
+           l.action, l.guardian_name AS guardianName, l.notes, l.created_at AS createdAt,
+           u.name AS staffName
+    FROM pickup_logs l
+    JOIN users u ON u.id = l.staff_user_id
+    WHERE l.id = ?
+  `).get(id)
+  res.status(201).json({ log: row })
+})
+
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const parsed = z.object({ date: calendarDate }).strict().safeParse(req.query)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })

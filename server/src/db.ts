@@ -117,7 +117,29 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
     created_by TEXT NOT NULL REFERENCES users(id),
     created_at TEXT NOT NULL
   );
-  CREATE INDEX IF NOT EXISTS announcements_created ON announcements(created_at DESC);`)
+  CREATE INDEX IF NOT EXISTS announcements_created ON announcements(created_at DESC);
+  CREATE TABLE IF NOT EXISTS authorized_pickups (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    relationship TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    is_emergency INTEGER NOT NULL DEFAULT 0 CHECK(is_emergency IN (0,1)),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS authorized_pickups_child ON authorized_pickups(child_id);
+  CREATE TABLE IF NOT EXISTS pickup_logs (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    log_date TEXT NOT NULL,
+    log_time TEXT NOT NULL,
+    action TEXT NOT NULL CHECK(action IN ('check_in', 'check_out')),
+    guardian_name TEXT NOT NULL,
+    staff_user_id TEXT NOT NULL REFERENCES users(id),
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS pickup_logs_child_date ON pickup_logs(child_id, log_date);`)
 
 export type DbUser = {
   id: string
@@ -298,4 +320,20 @@ if (announcementCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-
     'u-teacher',
     new Date().toISOString(),
   )
+}
+
+const pickupCount = db.prepare('SELECT COUNT(*) AS c FROM authorized_pickups').get() as { c: number }
+if (pickupCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get()) {
+  const insertPickup = db.prepare(`
+    INSERT INTO authorized_pickups (id, child_id, name, relationship, phone, is_emergency, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+  insertPickup.run('pick-1', 'c-arta', 'Flora Krasniqi', 'Gjyshja / Grandmother', '+383 44 222 333', 1, new Date().toISOString())
+  insertPickup.run('pick-2', 'c-arta', 'Valon Krasniqi', 'Daja / Uncle', '+383 49 111 222', 0, new Date().toISOString())
+
+  const today = new Date().toISOString().slice(0, 10)
+  db.prepare(`
+    INSERT INTO pickup_logs (id, child_id, log_date, log_time, action, guardian_name, staff_user_id, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('log-1', 'c-arta', today, '08:20', 'check_in', 'Elira Krasniqi (Nëna / Mother)', 'u-teacher', 'Arrived happily', new Date().toISOString())
 }

@@ -451,3 +451,95 @@ test('announcements API: authorization, targeting, creation, and deletion', asyn
     await f.dispose()
   }
 })
+
+test('authorized pickups and pickup logs API: permissions, validation, and operations', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const director = await f.login('director')
+    const teacher = await f.login('teacher')
+    const parent = await f.login('parent')
+
+    const date = '2040-10-18'
+
+    // Unauthorized
+    assert.equal((await request('children/c-arta/pickups')).status, 401)
+    assert.equal((await request('children/c-arta/pickup-logs')).status, 401)
+
+    // Parent can read seeded pickups for linked child
+    const parentPickups = await request('children/c-arta/pickups', parent)
+    assert.equal(parentPickups.status, 200)
+    assert.equal(parentPickups.data.pickups.length, 2)
+    assert.equal(parentPickups.data.pickups[0].name, 'Flora Krasniqi')
+    assert.equal(parentPickups.data.pickups[0].isEmergency, true)
+
+    // Parent cannot access pickups for a non-existent or unlinked child
+    assert.equal((await request('children/non-existent/pickups', parent)).status, 404)
+
+    // Parent adds authorized person for own child
+    const addRes = await request('children/c-arta/pickups', parent, {
+      name: 'Besnik Gashi',
+      relationship: 'Kujdestar / Babysitter',
+      phone: '+383 49 999 888',
+      isEmergency: false,
+    })
+    assert.equal(addRes.status, 201)
+    const newPickupId = addRes.data.pickup.id
+    assert.equal(addRes.data.pickup.name, 'Besnik Gashi')
+
+    // Director can also read pickups
+    const directorPickups = await request('children/c-arta/pickups', director)
+    assert.equal(directorPickups.status, 200)
+
+    // Teacher cannot add pickup person (only parent or director)
+    assert.equal((await request('children/c-arta/pickups', teacher, {
+      name: 'Illegal Add',
+      relationship: 'Friend',
+      phone: '123',
+    })).status, 403)
+
+    // Parent cannot log check-in/out (staff only)
+    assert.equal((await request('children/c-arta/pickup-logs', parent, {
+      logDate: date,
+      logTime: '08:15',
+      action: 'check_in',
+      guardianName: 'Flora Krasniqi',
+    })).status, 403)
+
+    // Teacher logs check_in
+    const checkInRes = await request('children/c-arta/pickup-logs', teacher, {
+      logDate: date,
+      logTime: '08:30',
+      action: 'check_in',
+      guardianName: 'Flora Krasniqi (Gjyshja)',
+      notes: 'Morning drop-off with bag',
+    })
+    assert.equal(checkInRes.status, 201)
+    assert.equal(checkInRes.data.log.action, 'check_in')
+    assert.equal(checkInRes.data.log.guardianName, 'Flora Krasniqi (Gjyshja)')
+
+    // Teacher logs check_out
+    const checkOutRes = await request('children/c-arta/pickup-logs', teacher, {
+      logDate: date,
+      logTime: '16:15',
+      action: 'check_out',
+      guardianName: 'Elira Krasniqi (Nëna)',
+      notes: 'Collected with artwork',
+    })
+    assert.equal(checkOutRes.status, 201)
+    assert.equal(checkOutRes.data.log.action, 'check_out')
+
+    // Parent can read own child logs for that date
+    const logsRes = await request(`children/c-arta/pickup-logs?date=${date}`, parent)
+    assert.equal(logsRes.status, 200)
+    assert.equal(logsRes.data.logs.length, 2)
+    assert.equal(logsRes.data.logs[0].action, 'check_out')
+    assert.equal(logsRes.data.logs[1].action, 'check_in')
+
+    // Parent deletes authorized person
+    assert.equal((await request(`children/c-arta/pickups/${newPickupId}`, parent, undefined, 'DELETE')).status, 200)
+  } finally {
+    await f.dispose()
+  }
+})
