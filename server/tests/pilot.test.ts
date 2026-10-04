@@ -779,3 +779,86 @@ test('weekly meals API: list all days, staff update, and parent authorization', 
     await f.dispose()
   }
 })
+
+test('child medical profile and incident reports API: emergency profile CRUD, incident logging, parent acknowledgment', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const parent = await f.login('parent')
+    const teacher = await f.login('teacher')
+
+    // Child c-arta medical profile can be read by parent and teacher
+    const medRes = await request('children/c-arta/medical', parent)
+    assert.equal(medRes.status, 200)
+
+    // Parent updates c-arta medical profile
+    const updateMedRes = await request('children/c-arta/medical', parent, {
+      pediatricianName: 'Dr. Valbona Kelmendi',
+      pediatricianPhone: '+383 44 999 888',
+      bloodType: 'A+',
+      chronicConditions: 'Mild pollen allergy / Alergji e lehtë ndaj polenit',
+      emergencyMedications: 'Claritin syrup / Shurup Claritin',
+      notes: 'Updated pediatric advice',
+    }, 'PUT')
+    assert.equal(updateMedRes.status, 200)
+    assert.equal(updateMedRes.data.medicalProfile.bloodType, 'A+')
+    assert.equal(updateMedRes.data.medicalProfile.pediatricianPhone, '+383 44 999 888')
+
+    // Parent cannot update unlinked child's medical profile
+    const unlinkedMedRes = await request('children/c-nonexistent/medical', parent, {
+      bloodType: 'O+',
+    }, 'PUT')
+    assert.equal(unlinkedMedRes.status, 404)
+
+    // Parent lists incidents
+    const initIncRes = await request('incidents', parent)
+    assert.equal(initIncRes.status, 200)
+    assert(Array.isArray(initIncRes.data.incidents))
+
+    // Parent cannot create incident report
+    const forbiddenInc = await request('incidents', parent, {
+      childId: 'c-arta',
+      incidentDate: '2026-10-05',
+      incidentTime: '11:15',
+      type: 'bump',
+      location: 'playground',
+      firstAid: 'ice_pack',
+      description: 'Bumped knee',
+      actionTaken: 'Cold pack applied',
+      parentNotified: true,
+    })
+    assert.equal(forbiddenInc.status, 403)
+
+    // Teacher creates incident report
+    const createIncRes = await request('incidents', teacher, {
+      childId: 'c-arta',
+      incidentDate: '2026-10-05',
+      incidentTime: '11:15',
+      type: 'scrape',
+      location: 'playground',
+      firstAid: 'cleaned_bandaged',
+      description: 'Minor scrape while playing tag',
+      actionTaken: 'Disinfected and applied fun animal bandage',
+      parentNotified: true,
+    })
+    assert.equal(createIncRes.status, 201)
+    const incId = createIncRes.data.incident.id
+    assert.equal(createIncRes.data.incident.type, 'scrape')
+    assert.equal(createIncRes.data.incident.parentNotified, true)
+    assert.equal(createIncRes.data.incident.parentAcknowledgedAt, null)
+
+    // Parent views incidents and acknowledges report
+    const parentListRes = await request('incidents', parent)
+    assert.equal(parentListRes.status, 200)
+    const targetInc = parentListRes.data.incidents.find((i: { id: string }) => i.id === incId)
+    assert(targetInc)
+    assert.equal(targetInc.parentAcknowledgedAt, null)
+
+    const ackRes = await request(`incidents/${incId}/acknowledge`, parent, {})
+    assert.equal(ackRes.status, 200)
+    assert(ackRes.data.incident.parentAcknowledgedAt !== null)
+  } finally {
+    await f.dispose()
+  }
+})

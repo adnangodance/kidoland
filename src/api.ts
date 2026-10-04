@@ -503,3 +503,91 @@ export async function updateWeeklyMeal(token: string, input: MealInput) {
     body: JSON.stringify(input),
   }, token)
 }
+
+export type ChildMedicalProfile = {
+  childId: string
+  pediatricianName: string
+  pediatricianPhone: string
+  bloodType: string
+  chronicConditions: string
+  emergencyMedications: string
+  notes: string
+  updatedAt: string
+}
+
+export type MedicalProfileInput = {
+  pediatricianName?: string
+  pediatricianPhone?: string
+  bloodType?: string
+  chronicConditions?: string
+  emergencyMedications?: string
+  notes?: string
+}
+
+export type IncidentType = 'scrape' | 'bump' | 'bruise' | 'cut' | 'bite' | 'fever' | 'other'
+export type IncidentLocation = 'playground' | 'classroom' | 'cafeteria' | 'nap_room' | 'bathroom' | 'other'
+export type IncidentFirstAid = 'ice_pack' | 'cleaned_bandaged' | 'temperature_taken' | 'rest' | 'doctor_called' | 'none'
+
+export type IncidentReport = {
+  id: string
+  childId: string
+  childName: string
+  groupName: string
+  reporterId: string
+  reporterName: string
+  reporterRole: string
+  incidentDate: string
+  incidentTime: string
+  type: IncidentType
+  location: IncidentLocation
+  firstAid: IncidentFirstAid
+  description: string
+  actionTaken: string
+  parentNotified: boolean
+  parentAcknowledgedAt: string | null
+  createdAt: string
+}
+
+export type IncidentInput = {
+  childId: string
+  incidentDate: string
+  incidentTime: string
+  type: IncidentType
+  location: IncidentLocation
+  firstAid: IncidentFirstAid
+  description: string
+  actionTaken: string
+  parentNotified?: boolean
+}
+
+export async function getMedicalProfile(token: string, childId: string, signal?: AbortSignal) {
+  return api<{ medicalProfile: ChildMedicalProfile | null }>(`/api/children/${childId}/medical`, { signal }, token)
+}
+
+export async function updateMedicalProfile(token: string, childId: string, input: MedicalProfileInput) {
+  return api<{ medicalProfile: ChildMedicalProfile }>(`/api/children/${childId}/medical`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function listIncidents(token: string, options?: { childId?: string; date?: string }, signal?: AbortSignal) {
+  const params = new URLSearchParams()
+  if (options?.childId) params.set('childId', options.childId)
+  if (options?.date) params.set('date', options.date)
+  const qs = params.toString() ? `?${params.toString()}` : ''
+  return api<{ incidents: IncidentReport[] }>(`/api/incidents${qs}`, { signal }, token)
+}
+
+export async function createIncident(token: string, input: IncidentInput) {
+  return api<{ incident: IncidentReport }>('/api/incidents', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function acknowledgeIncident(token: string, incidentId: string) {
+  return api<{ incident: IncidentReport }>(`/api/incidents/${incidentId}/acknowledge`, {
+    method: 'POST',
+  }, token)
+}

@@ -1148,6 +1148,188 @@ app.post('/api/meals', requireAuth, (req, res) => {
   res.status(200).json({ meal })
 })
 
+const medicalProfileSchema = z.object({
+  pediatricianName: z.string().max(100).default(''),
+  pediatricianPhone: z.string().max(50).default(''),
+  bloodType: z.string().max(10).default(''),
+  chronicConditions: z.string().max(300).default(''),
+  emergencyMedications: z.string().max(300).default(''),
+  notes: z.string().max(500).default(''),
+}).strict()
+
+app.get('/api/children/:childId/medical', requireAuth, (req, res) => {
+  const user = authed(req)
+  const child = db.prepare('SELECT id, parent_user_id AS parentUserId FROM children WHERE id = ?').get(req.params.childId) as { id: string; parentUserId: string | null } | undefined
+  if (!child) return res.status(404).json({ error: 'not_found' })
+  if (user.role === 'parent' && child.parentUserId !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const profile = db.prepare(`
+    SELECT child_id AS childId, pediatrician_name AS pediatricianName,
+           pediatrician_phone AS pediatricianPhone, blood_type AS bloodType,
+           chronic_conditions AS chronicConditions, emergency_medications AS emergencyMedications,
+           notes, updated_at AS updatedAt
+    FROM child_medical_profiles WHERE child_id = ?
+  `).get(req.params.childId) as any
+
+  res.json({ medicalProfile: profile || null })
+})
+
+app.put('/api/children/:childId/medical', requireAuth, (req, res) => {
+  const user = authed(req)
+  const child = db.prepare('SELECT id, parent_user_id AS parentUserId FROM children WHERE id = ?').get(req.params.childId) as { id: string; parentUserId: string | null } | undefined
+  if (!child) return res.status(404).json({ error: 'not_found' })
+  if (user.role === 'parent' && child.parentUserId !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const parsed = medicalProfileSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+
+  const { pediatricianName, pediatricianPhone, bloodType, chronicConditions, emergencyMedications, notes } = parsed.data
+  const now = new Date().toISOString()
+
+  db.prepare(`
+    INSERT INTO child_medical_profiles (child_id, pediatrician_name, pediatrician_phone, blood_type, chronic_conditions, emergency_medications, notes, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(child_id) DO UPDATE SET
+      pediatrician_name = excluded.pediatrician_name,
+      pediatrician_phone = excluded.pediatrician_phone,
+      blood_type = excluded.blood_type,
+      chronic_conditions = excluded.chronic_conditions,
+      emergency_medications = excluded.emergency_medications,
+      notes = excluded.notes,
+      updated_at = excluded.updated_at
+  `).run(req.params.childId, pediatricianName, pediatricianPhone, bloodType, chronicConditions, emergencyMedications, notes, now)
+
+  const updated = db.prepare(`
+    SELECT child_id AS childId, pediatrician_name AS pediatricianName,
+           pediatrician_phone AS pediatricianPhone, blood_type AS bloodType,
+           chronic_conditions AS chronicConditions, emergency_medications AS emergencyMedications,
+           notes, updated_at AS updatedAt
+    FROM child_medical_profiles WHERE child_id = ?
+  `).get(req.params.childId)
+
+  res.json({ medicalProfile: updated })
+})
+
+const incidentSelect = `
+  SELECT i.id, i.child_id AS childId, c.name AS childName, c.group_name AS groupName,
+         i.reporter_id AS reporterId, u.name AS reporterName, u.role AS reporterRole,
+         i.incident_date AS incidentDate, i.incident_time AS incidentTime,
+         i.type, i.location, i.first_aid AS firstAid,
+         i.description, i.action_taken AS actionTaken,
+         i.parent_notified AS parentNotified,
+         i.parent_acknowledged_at AS parentAcknowledgedAt,
+         i.created_at AS createdAt
+  FROM incident_reports i
+  JOIN children c ON c.id = i.child_id
+  JOIN users u ON u.id = i.reporter_id
+`
+
+const incidentQuery = z.object({
+  childId: z.string().optional(),
+  date: calendarDate.optional(),
+}).strict()
+
+const incidentBody = z.object({
+  childId: z.string().min(1),
+  incidentDate: calendarDate,
+  incidentTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  type: z.enum(['scrape', 'bump', 'bruise', 'cut', 'bite', 'fever', 'other']),
+  location: z.enum(['playground', 'classroom', 'cafeteria', 'nap_room', 'bathroom', 'other']),
+  firstAid: z.enum(['ice_pack', 'cleaned_bandaged', 'temperature_taken', 'rest', 'doctor_called', 'none']),
+  description: z.string().min(1).max(500),
+  actionTaken: z.string().min(1).max(500),
+  parentNotified: z.boolean().default(true),
+}).strict()
+
+app.get('/api/incidents', requireAuth, (req, res) => {
+  const parsed = incidentQuery.safeParse(req.query)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })
+  const user = authed(req)
+  let sql = `${incidentSelect} WHERE 1=1`
+  const params: string[] = []
+
+  if (user.role === 'parent') {
+    sql += ' AND c.parent_user_id = ?'
+    params.push(user.id)
+  }
+  if (parsed.data.childId) {
+    sql += ' AND i.child_id = ?'
+    params.push(parsed.data.childId)
+  }
+  if (parsed.data.date) {
+    sql += ' AND i.incident_date = ?'
+    params.push(parsed.data.date)
+  }
+
+  sql += ' ORDER BY i.incident_date DESC, i.incident_time DESC, i.created_at DESC'
+  const rows = db.prepare(sql).all(...params) as any[]
+  const incidents = rows.map((r) => ({
+    ...r,
+    parentNotified: Boolean(r.parentNotified),
+  }))
+  res.json({ incidents })
+})
+
+app.post('/api/incidents', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const parsed = incidentBody.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+
+  const child = db.prepare('SELECT id FROM children WHERE id = ?').get(parsed.data.childId)
+  if (!child) return res.status(404).json({ error: 'not_found' })
+
+  const id = randomUUID()
+  const now = new Date().toISOString()
+  const { childId, incidentDate, incidentTime, type, location, firstAid, description, actionTaken, parentNotified } = parsed.data
+
+  db.prepare(`
+    INSERT INTO incident_reports (id, child_id, reporter_id, incident_date, incident_time, type, location, first_aid, description, action_taken, parent_notified, parent_acknowledged_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, childId, user.id, incidentDate, incidentTime, type, location, firstAid, description, actionTaken, parentNotified ? 1 : 0, null, now)
+
+  const created = db.prepare(`${incidentSelect} WHERE i.id = ?`).get(id) as any
+  res.status(201).json({
+    incident: {
+      ...created,
+      parentNotified: Boolean(created.parentNotified),
+    },
+  })
+})
+
+app.post('/api/incidents/:id/acknowledge', requireAuth, (req, res) => {
+  const user = authed(req)
+  const incident = db.prepare(`
+    SELECT i.id, i.child_id, c.parent_user_id AS parentUserId
+    FROM incident_reports i
+    JOIN children c ON c.id = i.child_id
+    WHERE i.id = ?
+  `).get(req.params.id) as { id: string; child_id: string; parentUserId: string | null } | undefined
+
+  if (!incident) return res.status(404).json({ error: 'not_found' })
+  if (user.role === 'parent' && incident.parentUserId !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const now = new Date().toISOString()
+  db.prepare('UPDATE incident_reports SET parent_acknowledged_at = ? WHERE id = ?').run(now, req.params.id)
+
+  const updated = db.prepare(`${incidentSelect} WHERE i.id = ?`).get(req.params.id) as any
+  res.json({
+    incident: {
+      ...updated,
+      parentNotified: Boolean(updated.parentNotified),
+    },
+  })
+})
+
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const parsed = z.object({ date: calendarDate }).strict().safeParse(req.query)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })

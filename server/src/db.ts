@@ -193,7 +193,61 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
     updated_by TEXT NOT NULL REFERENCES users(id),
     updated_at TEXT NOT NULL,
     UNIQUE(day_of_week)
-  );`)
+  );
+  CREATE TABLE IF NOT EXISTS child_medical_profiles (
+    child_id TEXT PRIMARY KEY REFERENCES children(id) ON DELETE CASCADE,
+    pediatrician_name TEXT NOT NULL DEFAULT '',
+    pediatrician_phone TEXT NOT NULL DEFAULT '',
+    blood_type TEXT NOT NULL DEFAULT '',
+    chronic_conditions TEXT NOT NULL DEFAULT '',
+    emergency_medications TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS incident_reports (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    reporter_id TEXT NOT NULL REFERENCES users(id),
+    incident_date TEXT NOT NULL,
+    incident_time TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('scrape', 'bump', 'bruise', 'cut', 'bite', 'fever', 'other')),
+    location TEXT NOT NULL CHECK(location IN ('playground', 'classroom', 'cafeteria', 'nap_room', 'bathroom', 'other')),
+    first_aid TEXT NOT NULL CHECK(first_aid IN ('ice_pack', 'cleaned_bandaged', 'temperature_taken', 'rest', 'doctor_called', 'none')),
+    description TEXT NOT NULL,
+    action_taken TEXT NOT NULL,
+    parent_notified INTEGER NOT NULL DEFAULT 1 CHECK(parent_notified IN (0,1)),
+    parent_acknowledged_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS incident_reports_child ON incident_reports(child_id, incident_date);
+  CREATE INDEX IF NOT EXISTS incident_reports_date ON incident_reports(incident_date DESC);`)
+
+export type DbMedicalProfile = {
+  child_id: string
+  pediatrician_name: string
+  pediatrician_phone: string
+  blood_type: string
+  chronic_conditions: string
+  emergency_medications: string
+  notes: string
+  updated_at: string
+}
+
+export type DbIncidentReport = {
+  id: string
+  child_id: string
+  reporter_id: string
+  incident_date: string
+  incident_time: string
+  type: string
+  location: string
+  first_aid: string
+  description: string
+  action_taken: string
+  parent_notified: number
+  parent_acknowledged_at: string | null
+  created_at: string
+}
 
 export type DbUser = {
   id: string
@@ -508,6 +562,62 @@ if (mealCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-director
     'Gluten, Lactose / Qumësht',
     'Dita e lumtur e makaronave me perime / Happy pasta & veggie day',
     'u-director',
+    now,
+  )
+}
+
+const medCount = db.prepare('SELECT COUNT(*) AS c FROM child_medical_profiles').get() as { c: number }
+if (medCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get()) {
+  const insertMed = db.prepare(`
+    INSERT INTO child_medical_profiles (child_id, pediatrician_name, pediatrician_phone, blood_type, chronic_conditions, emergency_medications, notes, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const now = new Date().toISOString()
+  insertMed.run(
+    'c-arta',
+    'Dr. Valbona Kelmendi',
+    '+383 44 112 233',
+    'A+',
+    'Lehtësisht e ndjeshme ndaj pluhurit / Mild dust sensitivity',
+    'Ventolin inhaler (nëse nevojitet / as needed)',
+    'Pediatre në QKUK Prishtinë. Kontrollë vjetore e rregullt.',
+    now,
+  )
+  if (db.prepare("SELECT id FROM children WHERE id = 'c-luan'").get()) {
+    insertMed.run(
+      'c-luan',
+      'Dr. Arben Gashi',
+      '+383 49 556 677',
+      'O+',
+      'Nuk ka gjendje kronike / No chronic conditions',
+      'Nuk ka medikamente emergjente / None',
+      'Vaksinimi i plotë sipas kalendarit kombëtar',
+      now,
+    )
+  }
+}
+
+const incCount = db.prepare('SELECT COUNT(*) AS c FROM incident_reports').get() as { c: number }
+if (incCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get() && db.prepare("SELECT id FROM users WHERE id = 'u-teacher'").get()) {
+  const insertInc = db.prepare(`
+    INSERT INTO incident_reports (id, child_id, reporter_id, incident_date, incident_time, type, location, first_aid, description, action_taken, parent_notified, parent_acknowledged_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const now = new Date().toISOString()
+  const today = now.slice(0, 10)
+  insertInc.run(
+    'inc-seed-1',
+    'c-arta',
+    'u-teacher',
+    today,
+    '10:45',
+    'scrape',
+    'playground',
+    'cleaned_bandaged',
+    'U rrëzua gjatë vrapimit në bar dhe gërvishti lehtë gjurin e majtë / Tripped while running on grass and grazed left knee',
+    'Plaga u pastrua me ujë steril, u dezinfektua me kujdes dhe u vendos një fashë zbavitëse me ngjyra. Arta u qetësua menjëherë dhe vazhdoi lojën / Cleaned with sterile wash, disinfected, applied a cheerful bandage. Child happily resumed playing.',
+    1,
+    null,
     now,
   )
 }
