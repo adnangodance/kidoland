@@ -1346,3 +1346,90 @@ label.choice, .login-form label.choice { display: flex; align-items: center; gap
     display: none !important;
   }
 }
+
+/* Absence & Sick Leave Notices */
+.absences-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.absence-dates-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.absence-dates-row label {
+  flex: 1 1 120px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.absence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.absence-card {
+  border-left: 4px solid #1a5c45;
+}
+
+.absence-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0.65rem 0 0.35rem;
+}
+
+.absence-badge {
+  font-size: 0.78rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+}
+
+.absence-badge.sick {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.absence-badge.vacation {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.absence-badge.appointment {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.absence-badge.other {
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.absence-dates {
+  font-size: 0.85rem;
+  color: #475569;
+  font-weight: 600;
+}
+
+.absence-notes {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  color: #334155;
+  line-height: 1.4;
+  word-break: break-word;
+}

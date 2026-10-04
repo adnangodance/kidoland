@@ -662,3 +662,62 @@ test('online payment and official invoice receipt API: parent payment, validatio
     await f.dispose()
   }
 })
+
+test('absence notices API: permissions, date ranges, filters and cancellation', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const parent = await f.login('parent')
+    const teacher = await f.login('teacher')
+
+    // Initial list includes seeded notice for c-luan
+    const initialList = await request('absence-notices', parent)
+    assert.equal(initialList.status, 200)
+    assert.ok(initialList.data.notices.length >= 1)
+
+    // Invalid date range rejected
+    const invalidRange = await request('absence-notices', parent, {
+      childId: 'c-arta',
+      startDate: '2026-11-05',
+      endDate: '2026-11-02',
+      reasonType: 'sick',
+      notes: 'Should fail',
+    })
+    assert.equal(invalidRange.status, 400)
+    assert.equal(invalidRange.data.error, 'invalid_date_range')
+
+    // Parent creates valid notice for own child
+    const createRes = await request('absence-notices', parent, {
+      childId: 'c-arta',
+      startDate: '2026-11-02',
+      endDate: '2026-11-04',
+      reasonType: 'sick',
+      notes: 'Mild fever, doctor advised 2 days rest',
+    })
+    assert.equal(createRes.status, 201)
+    const noticeId = createRes.data.notice.id
+    assert.equal(createRes.data.notice.childName, 'Arta Krasniqi')
+    assert.equal(createRes.data.notice.reasonType, 'sick')
+
+    // Filter by active date
+    const onDate = await request('absence-notices?date=2026-11-03', teacher)
+    assert.equal(onDate.status, 200)
+    assert.ok(onDate.data.notices.some((n: { id: string }) => n.id === noticeId))
+
+    // Filter by date outside range
+    const outsideDate = await request('absence-notices?date=2026-11-10', teacher)
+    assert.equal(outsideDate.status, 200)
+    assert.ok(!outsideDate.data.notices.some((n: { id: string }) => n.id === noticeId))
+
+    // Parent can delete own notice
+    const delRes = await request(`absence-notices/${noticeId}`, parent, undefined, 'DELETE')
+    assert.equal(delRes.status, 200)
+
+    // Verify deleted
+    const afterDel = await request(`absence-notices?childId=c-arta`, parent)
+    assert.ok(!afterDel.data.notices.some((n: { id: string }) => n.id === noticeId))
+  } finally {
+    await f.dispose()
+  }
+})

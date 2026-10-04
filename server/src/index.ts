@@ -994,6 +994,99 @@ app.post('/api/conversations/:id/messages', requireAuth, (req, res) => {
   res.status(201).json({ message: createdMsg })
 })
 
+const absenceNoticeSelect = `
+  SELECT n.id, n.child_id AS childId, c.name AS childName, c.group_name AS groupName,
+         n.parent_user_id AS parentUserId, u.name AS parentName,
+         n.start_date AS startDate, n.end_date AS endDate,
+         n.reason_type AS reasonType, n.notes, n.created_at AS createdAt
+  FROM absence_notices n
+  JOIN children c ON c.id = n.child_id
+  JOIN users u ON u.id = n.parent_user_id
+`
+
+const absenceQuery = z.object({
+  childId: z.string().optional(),
+  date: calendarDate.optional(),
+}).strict()
+
+const absenceBody = z.object({
+  childId: z.string().min(1),
+  startDate: calendarDate,
+  endDate: calendarDate,
+  reasonType: z.enum(['sick', 'vacation', 'appointment', 'other']),
+  notes: z.string().max(1000).optional().default(''),
+}).strict()
+
+app.get('/api/absence-notices', requireAuth, (req, res) => {
+  const parsed = absenceQuery.safeParse(req.query)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })
+  const user = authed(req)
+  let sql = `${absenceNoticeSelect} WHERE 1=1`
+  const params: string[] = []
+
+  if (user.role === 'parent') {
+    sql += ' AND c.parent_user_id = ?'
+    params.push(user.id)
+  }
+
+  if (parsed.data.childId) {
+    sql += ' AND n.child_id = ?'
+    params.push(parsed.data.childId)
+  }
+
+  if (parsed.data.date) {
+    sql += ' AND n.start_date <= ? AND n.end_date >= ?'
+    params.push(parsed.data.date, parsed.data.date)
+  }
+
+  sql += ' ORDER BY n.start_date DESC, n.created_at DESC'
+  const notices = db.prepare(sql).all(...params)
+  res.json({ notices })
+})
+
+app.post('/api/absence-notices', requireAuth, (req, res) => {
+  const user = authed(req)
+  const parsed = absenceBody.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+  const { childId, startDate, endDate, reasonType, notes } = parsed.data
+
+  if (startDate > endDate) {
+    return res.status(400).json({ error: 'invalid_date_range' })
+  }
+
+  const child = db.prepare('SELECT id, parent_user_id AS parentUserId FROM children WHERE id = ?').get(childId) as { id: string; parentUserId: string } | undefined
+  if (!child) return res.status(404).json({ error: 'child_not_found' })
+
+  if (user.role === 'parent' && child.parentUserId !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const id = randomUUID()
+  const parentUserId = user.role === 'parent' ? user.id : child.parentUserId
+  const now = new Date().toISOString()
+
+  db.prepare(`
+    INSERT INTO absence_notices (id, child_id, parent_user_id, start_date, end_date, reason_type, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, childId, parentUserId, startDate, endDate, reasonType, notes, now)
+
+  const notice = db.prepare(`${absenceNoticeSelect} WHERE n.id = ?`).get(id)
+  res.status(201).json({ notice })
+})
+
+app.delete('/api/absence-notices/:id', requireAuth, (req, res) => {
+  const user = authed(req)
+  const notice = db.prepare('SELECT id, parent_user_id AS parentUserId FROM absence_notices WHERE id = ?').get(req.params.id) as { id: string; parentUserId: string } | undefined
+  if (!notice) return res.status(404).json({ error: 'notice_not_found' })
+
+  if (user.role === 'parent' && notice.parentUserId !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  db.prepare('DELETE FROM absence_notices WHERE id = ?').run(req.params.id)
+  res.json({ success: true })
+})
+
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const parsed = z.object({ date: calendarDate }).strict().safeParse(req.query)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })

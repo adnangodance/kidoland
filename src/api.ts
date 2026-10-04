@@ -422,3 +422,48 @@ export async function payInvoice(token: string, id: string, body: { paymentMetho
 export async function getInvoiceReceipt(token: string, id: string, signal?: AbortSignal) {
   return api<{ receipt: PaymentReceipt }>(`/api/invoices/${id}/receipt`, { signal }, token)
 }
+
+export type AbsenceReason = 'sick' | 'vacation' | 'appointment' | 'other'
+
+export type AbsenceNotice = {
+  id: string
+  childId: string
+  childName: string
+  groupName: string
+  parentUserId: string
+  parentName: string
+  startDate: string
+  endDate: string
+  reasonType: AbsenceReason
+  notes: string
+  createdAt: string
+}
+
+export type AbsenceInput = {
+  childId: string
+  startDate: string
+  endDate: string
+  reasonType: AbsenceReason
+  notes?: string
+}
+
+export async function listAbsenceNotices(token: string, options?: { childId?: string; date?: string }, signal?: AbortSignal) {
+  const params = new URLSearchParams()
+  if (options?.childId) params.set('childId', options.childId)
+  if (options?.date) params.set('date', options.date)
+  const qs = params.toString() ? `?${params.toString()}` : ''
+  return api<{ notices: AbsenceNotice[] }>(`/api/absence-notices${qs}`, { signal }, token)
+}
+
+export async function createAbsenceNotice(token: string, input: AbsenceInput) {
+  return api<{ notice: AbsenceNotice }>('/api/absence-notices', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function deleteAbsenceNotice(token: string, id: string) {
+  return api<{ success: boolean }>(`/api/absence-notices/${id}`, {
+    method: 'DELETE',
+  }, token)
+}

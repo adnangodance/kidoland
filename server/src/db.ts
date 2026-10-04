@@ -168,7 +168,19 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
     read_at TEXT,
     created_at TEXT NOT NULL
   );
-  CREATE INDEX IF NOT EXISTS messages_conversation_created ON messages(conversation_id, created_at ASC);`)
+  CREATE INDEX IF NOT EXISTS messages_conversation_created ON messages(conversation_id, created_at ASC);
+  CREATE TABLE IF NOT EXISTS absence_notices (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    parent_user_id TEXT NOT NULL REFERENCES users(id),
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    reason_type TEXT NOT NULL CHECK(reason_type IN ('sick', 'vacation', 'appointment', 'other')),
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS absence_notices_child ON absence_notices(child_id, start_date, end_date);
+  CREATE INDEX IF NOT EXISTS absence_notices_dates ON absence_notices(start_date, end_date);`)
 
 export type DbUser = {
   id: string
@@ -398,5 +410,22 @@ if (conversationCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 
     'Përshëndetje Elira! Mos u shqetësoni aspak, kemi gota dhe shishe rezervë të sterilizuara. Ajo po luan me shoqet e saj! 😊\nHello Elira! Don’t worry at all, we have sanitized spare cups and fresh water. She is happily playing with friends! 😊',
     null,
     now,
+  )
+}
+
+const absenceCount = db.prepare('SELECT COUNT(*) AS c FROM absence_notices').get() as { c: number }
+if (absenceCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-luan'").get()) {
+  db.prepare(`
+    INSERT INTO absence_notices (id, child_id, parent_user_id, start_date, end_date, reason_type, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'abs-1',
+    'c-luan',
+    'u-parent',
+    '2026-10-15',
+    '2026-10-16',
+    'appointment',
+    'Kontrollë rutinë tek dentisti / Pediatric dental checkup',
+    new Date().toISOString(),
   )
 }

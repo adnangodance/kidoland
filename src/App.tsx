@@ -9,9 +9,10 @@ import Dashboard from './Dashboard'
 import Program from './Program'
 import Announcements from './Announcements'
 import Messages from './Messages'
+import Absences from './Absences'
 import './App.css'
 
-type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages'
+type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences'
 
 const DEMO = [
   { email: 'parent@kidoland.demo', password: 'parent123', roleKey: 'roleParent' as const },
@@ -73,6 +74,9 @@ function Shell() {
               <button type="button" aria-current={activeView === 'messages' ? 'page' : undefined} onClick={() => go('messages')}>
                 {t.navMessages}
               </button>
+              <button type="button" aria-current={activeView === 'absences' ? 'page' : undefined} onClick={() => go('absences')}>
+                {t.navAbsences}
+              </button>
               <button type="button" aria-current={activeView === 'children' ? 'page' : undefined} onClick={() => go('children')}>
                 {user.role === 'parent' ? t.consentTitle : t.childrenTitle}
               </button>
@@ -107,6 +111,7 @@ function Shell() {
       {user && activeView === 'announcements' && <Announcements />}
       {user && activeView === 'messages' && <Messages />}
       {user && activeView === 'payments' && <Payments />}
+      {user && activeView === 'absences' && <Absences />}
       {user && activeView === 'children' && <Children />}
       </main>
 
