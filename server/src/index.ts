@@ -9,9 +9,9 @@ import { requireAuth, signToken, type AuthUser } from './auth.js'
 export const app = express()
 
 app.use(cors({ origin: true, credentials: true }))
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))
 app.use((error: { type?: string }, _req: express.Request, res: express.Response, next: express.NextFunction) => {
-  if (error.type === 'entity.parse.failed') return res.status(400).json({ error: 'invalid_body' })
+  if (error.type === 'entity.parse.failed' || error.type === 'entity.too.large') return res.status(400).json({ error: 'invalid_body' })
   next(error)
 })
 
@@ -58,17 +58,17 @@ app.get('/api/children', requireAuth, (req, res) => {
   if (user.role === 'parent') {
     const rows = db
       .prepare(
-        'SELECT id, name, group_name AS groupName, parent_user_id AS parentUserId, photo_consent AS photoConsent FROM children WHERE parent_user_id = ? ORDER BY name',
+        "SELECT id, name, group_name AS groupName, parent_user_id AS parentUserId, photo_consent AS photoConsent, COALESCE(allergies, '') AS allergies FROM children WHERE parent_user_id = ? ORDER BY name",
       )
       .all(user.id)
-    return res.json({ children: rows.map((row) => ({ ...(row as object), photoConsent: Boolean((row as { photoConsent: number }).photoConsent) })) })
+    return res.json({ children: rows.map((row) => ({ ...(row as object), photoConsent: Boolean((row as { photoConsent: number }).photoConsent), allergies: (row as { allergies?: string }).allergies || '' })) })
   }
   const rows = db
     .prepare(
-      'SELECT id, name, group_name AS groupName, parent_user_id AS parentUserId, photo_consent AS photoConsent FROM children ORDER BY name',
+      "SELECT id, name, group_name AS groupName, parent_user_id AS parentUserId, photo_consent AS photoConsent, COALESCE(allergies, '') AS allergies FROM children ORDER BY name",
     )
     .all()
-  res.json({ children: rows.map((row) => ({ ...(row as object), photoConsent: Boolean((row as { photoConsent: number }).photoConsent) })) })
+  res.json({ children: rows.map((row) => ({ ...(row as object), photoConsent: Boolean((row as { photoConsent: number }).photoConsent), allergies: (row as { allergies?: string }).allergies || '' })) })
 })
 
 // Round-trip validation rejects impossible dates rather than normalizing them.
@@ -149,11 +149,14 @@ app.get('/api/reports', requireAuth, (req, res) => {
 
   let sql = `
     SELECT r.id, r.child_id AS childId, c.name AS childName, c.group_name AS groupName,
+           COALESCE(c.allergies, '') AS allergies,
            r.teacher_user_id AS teacherUserId, u.name AS teacherName,
-           r.report_date AS reportDate, r.mood, r.meals, r.nap, r.activities, r.note, r.created_at AS createdAt
+           r.report_date AS reportDate, r.mood, r.meals, r.nap, r.activities, r.note, r.created_at AS createdAt,
+           rp.image_url AS imageUrl
     FROM reports r
     JOIN children c ON c.id = r.child_id
     JOIN users u ON u.id = r.teacher_user_id
+    LEFT JOIN report_photos rp ON rp.report_id = r.id
     WHERE 1=1
   `
   const params: string[] = []
@@ -181,6 +184,7 @@ const reportSchema = z.object({
   nap: z.string().min(1).max(5000).refine((value) => value.trim().length > 0),
   activities: z.string().min(1).max(5000).refine((value) => value.trim().length > 0),
   note: z.string().max(5000).default(''),
+  imageUrl: z.string().max(8_000_000).nullable().optional(),
 }).strict()
 
 app.post('/api/reports', requireAuth, (req, res) => {
@@ -198,29 +202,46 @@ app.post('/api/reports', requireAuth, (req, res) => {
 
   const id = randomUUID()
   try {
-    db.prepare(
-      `INSERT INTO reports (id, child_id, teacher_user_id, report_date, mood, meals, nap, activities, note, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(child_id, report_date) DO UPDATE SET
-         teacher_user_id=excluded.teacher_user_id,
-         mood=excluded.mood,
-         meals=excluded.meals,
-         nap=excluded.nap,
-         activities=excluded.activities,
-         note=excluded.note,
-         created_at=excluded.created_at`,
-    ).run(
-      id,
-      body.childId,
-      user.id,
-      body.reportDate,
-      body.mood,
-      body.meals,
-      body.nap,
-      body.activities,
-      body.note,
-      new Date().toISOString(),
-    )
+    db.transaction(() => {
+      db.prepare(
+        `INSERT INTO reports (id, child_id, teacher_user_id, report_date, mood, meals, nap, activities, note, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(child_id, report_date) DO UPDATE SET
+           teacher_user_id=excluded.teacher_user_id,
+           mood=excluded.mood,
+           meals=excluded.meals,
+           nap=excluded.nap,
+           activities=excluded.activities,
+           note=excluded.note,
+           created_at=excluded.created_at`,
+      ).run(
+        id,
+        body.childId,
+        user.id,
+        body.reportDate,
+        body.mood,
+        body.meals,
+        body.nap,
+        body.activities,
+        body.note,
+        new Date().toISOString(),
+      )
+
+      if (body.imageUrl !== undefined) {
+        const reportRow = db.prepare('SELECT id FROM reports WHERE child_id = ? AND report_date = ?').get(body.childId, body.reportDate) as { id: string }
+        if (body.imageUrl && body.imageUrl.trim().length > 0) {
+          db.prepare(`
+            INSERT INTO report_photos (id, report_id, image_url, created_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(report_id) DO UPDATE SET
+              image_url=excluded.image_url,
+              created_at=excluded.created_at
+          `).run(randomUUID(), reportRow.id, body.imageUrl, new Date().toISOString())
+        } else {
+          db.prepare('DELETE FROM report_photos WHERE report_id = ?').run(reportRow.id)
+        }
+      }
+    })()
   } catch {
     return res.status(500).json({ error: 'save_failed' })
   }
@@ -228,16 +249,172 @@ app.post('/api/reports', requireAuth, (req, res) => {
   const row = db
     .prepare(
       `SELECT r.id, r.child_id AS childId, c.name AS childName, c.group_name AS groupName,
+              COALESCE(c.allergies, '') AS allergies,
               r.teacher_user_id AS teacherUserId, u.name AS teacherName,
-              r.report_date AS reportDate, r.mood, r.meals, r.nap, r.activities, r.note, r.created_at AS createdAt
+              r.report_date AS reportDate, r.mood, r.meals, r.nap, r.activities, r.note, r.created_at AS createdAt,
+              rp.image_url AS imageUrl
        FROM reports r
        JOIN children c ON c.id = r.child_id
        JOIN users u ON u.id = r.teacher_user_id
+       LEFT JOIN report_photos rp ON rp.report_id = r.id
        WHERE r.child_id = ? AND r.report_date = ?`,
     )
     .get(body.childId, body.reportDate)
   res.status(201).json({ report: row })
 })
+
+const batchReportSchema = z.object({
+  childIds: z.array(z.string().trim().min(1)).min(1).max(100),
+  reportDate: calendarDate,
+  mood: z.string().trim().min(1).max(100),
+  meals: z.string().trim().min(1).max(100),
+  nap: z.string().trim().min(1).max(100),
+  activities: z.string().trim().min(1).max(500),
+  note: z.string().max(5000).optional().default(''),
+}).strict()
+
+app.post('/api/reports/batch', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role === 'parent') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+  const parsed = batchReportSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+  const body = parsed.data
+
+  const validChildren = db.prepare(`SELECT id FROM children WHERE id IN (${body.childIds.map(() => '?').join(',')})`).all(...body.childIds) as { id: string }[]
+  if (validChildren.length === 0) {
+    return res.status(404).json({ error: 'no_valid_children' })
+  }
+
+  const now = new Date().toISOString()
+  try {
+    db.transaction(() => {
+      const insert = db.prepare(`
+        INSERT INTO reports (id, child_id, teacher_user_id, report_date, mood, meals, nap, activities, note, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(child_id, report_date) DO UPDATE SET
+          teacher_user_id=excluded.teacher_user_id,
+          mood=excluded.mood,
+          meals=excluded.meals,
+          nap=excluded.nap,
+          activities=excluded.activities,
+          note=excluded.note,
+          created_at=excluded.created_at
+      `)
+      for (const child of validChildren) {
+        insert.run(randomUUID(), child.id, user.id, body.reportDate, body.mood, body.meals, body.nap, body.activities, body.note, now)
+      }
+    })()
+
+    return res.status(201).json({ count: validChildren.length })
+  } catch (error) {
+    console.error('Batch report failed:', error)
+    return res.status(500).json({ error: 'save_failed' })
+  }
+})
+
+
+const programBodySchema = z.object({
+  groupName: z.string().trim().min(1).max(100),
+  programDate: calendarDate,
+  theme: z.string().trim().min(1).max(300),
+  activities: z.string().trim().min(1).max(5000),
+  mealsMenu: z.string().trim().min(1).max(5000),
+  notes: z.string().max(5000).optional().default(''),
+}).strict()
+
+app.get('/api/programs', requireAuth, (req, res) => {
+  const user = authed(req)
+  const parsed = z.object({
+    date: calendarDate.optional(),
+    groupName: z.string().trim().min(1).max(100).optional(),
+  }).strict().safeParse(req.query)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })
+  const { date, groupName } = parsed.data
+
+  let allowedGroups: string[] | null = null
+  if (user.role === 'parent') {
+    const parentGroups = db.prepare('SELECT DISTINCT group_name FROM children WHERE parent_user_id = ?').all(user.id) as { group_name: string }[]
+    allowedGroups = parentGroups.map((g) => g.group_name)
+    if (allowedGroups.length === 0) {
+      return res.json({ programs: [] })
+    }
+    if (groupName && !allowedGroups.includes(groupName)) {
+      return res.json({ programs: [] })
+    }
+  }
+
+  let sql = `
+    SELECT p.id, p.group_name AS groupName, p.program_date AS programDate,
+           p.theme, p.activities, p.meals_menu AS mealsMenu, p.notes,
+           p.created_by AS createdBy, u.name AS createdByName,
+           p.created_at AS createdAt, p.updated_at AS updatedAt
+    FROM daily_programs p
+    JOIN users u ON u.id = p.created_by
+    WHERE 1=1
+  `
+  const params: unknown[] = []
+  if (date) {
+    sql += ' AND p.program_date = ?'
+    params.push(date)
+  }
+  if (groupName) {
+    sql += ' AND p.group_name = ?'
+    params.push(groupName)
+  } else if (allowedGroups) {
+    sql += ` AND p.group_name IN (${allowedGroups.map(() => '?').join(',')})`
+    params.push(...allowedGroups)
+  }
+  sql += ' ORDER BY p.program_date DESC, p.group_name ASC'
+
+  const rows = db.prepare(sql).all(...params)
+  res.json({ programs: rows })
+})
+
+app.post('/api/programs', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role === 'parent') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+  const parsed = programBodySchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body' })
+  }
+  const body = parsed.data
+  const id = randomUUID()
+  const now = new Date().toISOString()
+
+  try {
+    db.prepare(`
+      INSERT INTO daily_programs (id, group_name, program_date, theme, activities, meals_menu, notes, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(group_name, program_date) DO UPDATE SET
+        theme=excluded.theme,
+        activities=excluded.activities,
+        meals_menu=excluded.meals_menu,
+        notes=excluded.notes,
+        created_by=excluded.created_by,
+        updated_at=excluded.updated_at
+    `).run(id, body.groupName, body.programDate, body.theme, body.activities, body.mealsMenu, body.notes || '', user.id, now, now)
+
+    const row = db.prepare(`
+      SELECT p.id, p.group_name AS groupName, p.program_date AS programDate,
+             p.theme, p.activities, p.meals_menu AS mealsMenu, p.notes,
+             p.created_by AS createdBy, u.name AS createdByName,
+             p.created_at AS createdAt, p.updated_at AS updatedAt
+      FROM daily_programs p
+      JOIN users u ON u.id = p.created_by
+      WHERE p.group_name = ? AND p.program_date = ?
+    `).get(body.groupName, body.programDate)
+
+    res.status(201).json({ program: row })
+  } catch (error) {
+    console.error('Could not save program:', error)
+    res.status(500).json({ error: 'save_failed' })
+  }
+})
+
 
 
 const positiveCents = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
@@ -319,10 +496,10 @@ app.post('/api/parents', requireAuth, (req, res) => {
   db.prepare('INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)').run(parent.id, parent.name, parent.email, bcrypt.hashSync(body.password, 10), parent.role)
   res.status(201).json({ parent })
 })
-const childSchema = z.object({ name: z.string().trim().min(1).max(200), groupName: z.string().trim().min(1).max(200), parentUserId: z.string().trim().min(1) }).strict()
+const childSchema = z.object({ name: z.string().trim().min(1).max(200), groupName: z.string().trim().min(1).max(200), parentUserId: z.string().trim().min(1), allergies: z.string().max(500).optional().default('') }).strict()
 function childRow(id: string) {
-  const row = db.prepare('SELECT id, name, group_name AS groupName, parent_user_id AS parentUserId, photo_consent AS photoConsent FROM children WHERE id = ?').get(id) as { photoConsent: number }
-  return { ...row, photoConsent: Boolean(row.photoConsent) }
+  const row = db.prepare("SELECT id, name, group_name AS groupName, parent_user_id AS parentUserId, photo_consent AS photoConsent, COALESCE(allergies, '') AS allergies FROM children WHERE id = ?").get(id) as { photoConsent: number; allergies: string }
+  return { ...row, photoConsent: Boolean(row.photoConsent), allergies: row.allergies || '' }
 }
 app.post('/api/children', requireAuth, (req, res) => {
   if (authed(req).role !== 'director') return res.status(403).json({ error: 'forbidden' })
@@ -342,7 +519,7 @@ app.post('/api/children', requireAuth, (req, res) => {
   const id = randomUUID()
   try {
     db.transaction(() => {
-      db.prepare('INSERT INTO children (id, name, group_name, parent_user_id) VALUES (?, ?, ?, ?)').run(id, body.name, body.groupName, body.parentUserId)
+      db.prepare('INSERT INTO children (id, name, group_name, parent_user_id, allergies) VALUES (?, ?, ?, ?, ?)').run(id, body.name, body.groupName, body.parentUserId, body.allergies || '')
       if (requestId) db.prepare('INSERT INTO child_requests (request_id, user_id, payload, child_id) VALUES (?, ?, ?, ?)').run(requestId, user.id, payload, id)
     })()
   } catch { return res.status(500).json({ error: 'save_failed' }) }
@@ -355,7 +532,7 @@ app.patch('/api/children/:id', requireAuth, (req, res) => {
   if (!db.prepare('SELECT id FROM children WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: 'child_not_found' })
   const body = parsed.data
   if (!db.prepare("SELECT id FROM users WHERE id = ? AND role = 'parent'").get(body.parentUserId)) return res.status(400).json({ error: 'invalid_parent' })
-  db.prepare(`UPDATE children SET name = ?, group_name = ?, photo_consent = CASE WHEN parent_user_id = ? THEN photo_consent ELSE 0 END, parent_user_id = ? WHERE id = ?`).run(body.name, body.groupName, body.parentUserId, body.parentUserId, req.params.id)
+  db.prepare(`UPDATE children SET name = ?, group_name = ?, photo_consent = CASE WHEN parent_user_id = ? THEN photo_consent ELSE 0 END, parent_user_id = ?, allergies = ? WHERE id = ?`).run(body.name, body.groupName, body.parentUserId, body.parentUserId, body.allergies || '', req.params.id)
   res.json({ child: childRow(String(req.params.id)) })
 })
 app.patch('/api/children/:id/consent', requireAuth, (req, res) => {
@@ -387,10 +564,10 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
     ${user.role === 'parent' ? 'AND c.parent_user_id = ?' : ''}`).all(...params) as { currency: string; cents: string }[]
   for (const invoice of pending) balances.set(invoice.currency, (balances.get(invoice.currency) || 0n) + BigInt(invoice.cents))
   const unpaidBalances = [...balances].sort(([a], [b]) => a.localeCompare(b)).map(([currency, cents]) => ({ currency, amountCents: cents.toString() }))
-  const children = db.prepare(`SELECT c.id, c.name, c.group_name AS groupName, c.photo_consent AS photoConsent,
+  const children = db.prepare(`SELECT c.id, c.name, c.group_name AS groupName, c.photo_consent AS photoConsent, COALESCE(c.allergies, '') AS allergies,
     a.status AS attendanceStatus, EXISTS(SELECT 1 FROM reports r WHERE r.child_id = c.id AND r.report_date = ?) AS hasReport
     FROM children c LEFT JOIN attendance a ON a.child_id = c.id AND a.attendance_date = ?
     ${user.role === 'parent' ? 'WHERE c.parent_user_id = ?' : ''} ORDER BY c.name, c.id`).all(parsed.data.date, parsed.data.date, ...params)
-    .map((row) => { const child = row as { photoConsent: number; hasReport: number }; return { ...child, photoConsent: Boolean(child.photoConsent), hasReport: Boolean(child.hasReport) } })
+    .map((row) => { const child = row as { photoConsent: number; hasReport: number; allergies?: string }; return { ...child, photoConsent: Boolean(child.photoConsent), hasReport: Boolean(child.hasReport), allergies: child.allergies || '' } })
   res.json({ summary: { ...summary, unpaidBalances, date: parsed.data.date, unmarked: summary.children - summary.present - summary.absent, childSummaries: children } })
 })

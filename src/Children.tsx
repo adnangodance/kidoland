@@ -5,6 +5,7 @@ import { ApiError, listChildren, listParents, createChild, updateChild, createPa
 import { useAuth } from './auth'
 import { useI18n } from './i18n/LanguageContext'
 import { useAlive } from './pilot-utils'
+import ChildAvatar from './ChildAvatar'
 
 function Consent({ child }: { child: Child }) {
   const { token } = useAuth()
@@ -25,7 +26,8 @@ function Consent({ child }: { child: Child }) {
     finally { if (alive.current) setBusy(false) }
   }
   return <article className="roster-card">
-    <h2>{child.name}</h2><p>{child.groupName}</p>
+    <div className="card-avatar-heading"><ChildAvatar name={child.name} size={42} /><div><h2>{child.name}</h2><p className="card-subtitle">{child.groupName}</p></div></div>
+    {child.allergies && <p className="allergy-badge">⚠️ <strong>{t.allergies}:</strong> {child.allergies}</p>}
     <p>{t.permission}: <strong>{saved ? t.allowed : t.notAllowed}</strong></p>
     <fieldset disabled={busy}><legend>{t.consentTitle} · {child.name}</legend>
       <label className="choice"><input type="radio" name={`consent-${child.id}`} checked={draft} onChange={() => { setDraft(true); setSuccess(false) }} />{t.allowPhotos}</label>
@@ -109,7 +111,7 @@ export default function Children() {
     {error && <p role="alert" className="form-error">{error === 'load' ? t.loadError : error === 'email' ? t.emailExists : error === 'password' ? t.passwordLimit : t.saveError}{error === 'load' && <button onClick={() => void reload()}>{t.attendanceRetry}</button>}</p>}
     {success && <p role="status">{t.attendanceSaved}</p>}
     {director && !loading && error !== 'load' && <>
-      <div className="actions"><button className="btn primary" disabled={busy} onClick={() => { createRequest.current = null; setError(''); setEditing(null); setDraft({ name: '', groupName: '', parentUserId: parents[0]?.id || '' }); setSuccess(false) }}>{t.createChild}</button>
+      <div className="actions"><button className="btn primary" disabled={busy} onClick={() => { createRequest.current = null; setError(''); setEditing(null); setDraft({ name: '', groupName: '', parentUserId: parents[0]?.id || '', allergies: '' }); setSuccess(false) }}>{t.createChild}</button>
       <button className="btn ghost" disabled={busy} onClick={() => setParentOpen(!parentOpen)}>{t.newParent}</button></div>
       {parentOpen && <form className="login-form" onSubmit={provision}><h2>{t.newParent}</h2><fieldset disabled={busy}>
         <label>{t.parentName}<input required maxLength={200} value={parentDraft.name} onChange={(e) => setParentDraft({ ...parentDraft, name: e.target.value })} /></label>
@@ -122,12 +124,13 @@ export default function Children() {
         <label>{t.childName}<input required maxLength={200} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
         <label>{t.attendanceGroup}<input required maxLength={200} value={draft.groupName} onChange={(e) => setDraft({ ...draft, groupName: e.target.value })} /></label>
         <label>{t.linkedParent}<select required value={draft.parentUserId} onChange={(e) => setDraft({ ...draft, parentUserId: e.target.value })}><option value="">{t.selectParent}</option>{parents.map((parent) => <option key={parent.id} value={parent.id}>{parent.name} · {parent.email}</option>)}</select></label>
+        <label>{t.allergies} ({t.optional})<input maxLength={200} placeholder={t.allergiesPlaceholder} value={draft.allergies || ''} onChange={(e) => setDraft({ ...draft, allergies: e.target.value })} /></label>
         {!parents.length && <p>{t.noParents}</p>}
         {editing && editing.parentUserId !== draft.parentUserId && <p role="status" className="notice">{t.transferWarning}</p>}
         <div className="actions"><button className="btn primary" disabled={!parents.length}>{busy ? t.attendanceSaving : t.save}</button><button type="button" className="btn ghost" onClick={() => setEditing(undefined)}>{t.cancel}</button></div>
       </fieldset></form>}
     </>}
     {!loading && error !== 'load' && !children.length && <p>{t.attendanceEmpty}</p>}
-    {!loading && children.map((child) => user?.role === 'parent' ? <Consent key={child.id} child={child} /> : <article className="roster-card" key={child.id}><h2>{child.name}</h2><p>{child.groupName}</p><p>{t.permission}: <strong>{child.photoConsent ? t.allowed : t.notAllowed}</strong></p>{director && <><p>{t.linkedParent}: {parents.find((p) => p.id === child.parentUserId)?.name}</p><button className="btn ghost" disabled={busy} onClick={() => { setEditing(child); setDraft({ name: child.name, groupName: child.groupName, parentUserId: child.parentUserId }); setSuccess(false) }}>{t.edit} · {child.name}</button></>}</article>)}
+    {!loading && children.map((child) => user?.role === 'parent' ? <Consent key={child.id} child={child} /> : <article className="roster-card" key={child.id}><div className="card-avatar-heading"><ChildAvatar name={child.name} size={42} /><div><h2>{child.name}</h2><p className="card-subtitle">{child.groupName}</p></div></div>{child.allergies && <p className="allergy-badge">⚠️ <strong>{t.allergies}:</strong> {child.allergies}</p>}<p>{t.permission}: <strong>{child.photoConsent ? t.allowed : t.notAllowed}</strong></p>{director && <><p>{t.linkedParent}: {parents.find((p) => p.id === child.parentUserId)?.name}</p><button className="btn ghost" disabled={busy} onClick={() => { setEditing(child); setDraft({ name: child.name, groupName: child.groupName, parentUserId: child.parentUserId, allergies: child.allergies || '' }); setSuccess(false) }}>{t.edit} · {child.name}</button></>}</article>)}
   </section>
 }

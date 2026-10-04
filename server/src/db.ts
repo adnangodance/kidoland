@@ -70,6 +70,9 @@ const childColumns = db.prepare('PRAGMA table_info(children)').all() as { name: 
 if (!childColumns.some((column) => column.name === 'photo_consent')) {
   db.exec('ALTER TABLE children ADD COLUMN photo_consent INTEGER NOT NULL DEFAULT 0 CHECK(photo_consent IN (0,1))')
 }
+if (!childColumns.some((column) => column.name === 'allergies')) {
+  db.exec("ALTER TABLE children ADD COLUMN allergies TEXT NOT NULL DEFAULT ''")
+}
 db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
   id TEXT PRIMARY KEY, invoice_id TEXT NOT NULL REFERENCES invoices(id),
   description TEXT NOT NULL, amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
@@ -82,7 +85,28 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
  CREATE TABLE IF NOT EXISTS child_requests (
    request_id TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id), payload TEXT NOT NULL,
    child_id TEXT NOT NULL REFERENCES children(id), PRIMARY KEY(user_id, request_id)
- );`)
+ );
+ CREATE TABLE IF NOT EXISTS report_photos (
+   id TEXT PRIMARY KEY,
+   report_id TEXT NOT NULL UNIQUE REFERENCES reports(id) ON DELETE CASCADE,
+   image_url TEXT NOT NULL,
+   created_at TEXT NOT NULL
+ );
+ CREATE INDEX IF NOT EXISTS report_photos_report ON report_photos(report_id);
+ CREATE TABLE IF NOT EXISTS daily_programs (
+   id TEXT PRIMARY KEY,
+   group_name TEXT NOT NULL,
+   program_date TEXT NOT NULL,
+   theme TEXT NOT NULL,
+   activities TEXT NOT NULL,
+   meals_menu TEXT NOT NULL,
+   notes TEXT NOT NULL DEFAULT '',
+   created_by TEXT NOT NULL REFERENCES users(id),
+   created_at TEXT NOT NULL,
+   updated_at TEXT NOT NULL,
+   UNIQUE(group_name, program_date)
+ );
+ CREATE INDEX IF NOT EXISTS daily_programs_date_group ON daily_programs(program_date, group_name);`)
 
 export type DbUser = {
   id: string
@@ -131,12 +155,13 @@ if (count.c === 0) {
 const childCount = db.prepare('SELECT COUNT(*) AS c FROM children').get() as { c: number }
 if (childCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-parent' AND role = 'parent'").get()) {
   db.prepare(
-    'INSERT INTO children (id, name, group_name, parent_user_id) VALUES (?, ?, ?, ?)',
-  ).run('c-arta', 'Arta Krasniqi', 'Bletët / Bumblebees', 'u-parent')
+    'INSERT INTO children (id, name, group_name, parent_user_id, allergies) VALUES (?, ?, ?, ?, ?)',
+  ).run('c-arta', 'Arta Krasniqi', 'Bletët / Bumblebees', 'u-parent', 'Alergji në kikirik / Peanut allergy')
   db.prepare(
-    'INSERT INTO children (id, name, group_name, parent_user_id) VALUES (?, ?, ?, ?)',
-  ).run('c-luan', 'Luan Gashi', 'Bletët / Bumblebees', 'u-parent')
+    'INSERT INTO children (id, name, group_name, parent_user_id, allergies) VALUES (?, ?, ?, ?, ?)',
+  ).run('c-luan', 'Luan Gashi', 'Bletët / Bumblebees', 'u-parent', '')
 }
+db.prepare("UPDATE children SET allergies = 'Alergji në kikirik / Peanut allergy' WHERE id = 'c-arta' AND (allergies IS NULL OR allergies = '')").run()
 
 const reportCount = db.prepare('SELECT COUNT(*) AS c FROM reports').get() as { c: number }
 if (reportCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get() && db.prepare("SELECT id FROM users WHERE id = 'u-teacher'").get()) {
@@ -215,3 +240,23 @@ if (invoiceCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-ar
 db.exec(`INSERT INTO invoice_items (id, invoice_id, description, amount_cents, position)
   SELECT 'legacy-' || i.id, i.id, 'tuition', i.amount_cents, 0 FROM invoices i
   WHERE NOT EXISTS (SELECT 1 FROM invoice_items item WHERE item.invoice_id = i.id)`)
+
+const programCount = db.prepare('SELECT COUNT(*) AS c FROM daily_programs').get() as { c: number }
+if (programCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-teacher'").get()) {
+  const today = new Date().toISOString().slice(0, 10)
+  db.prepare(`
+    INSERT INTO daily_programs (id, group_name, program_date, theme, activities, meals_menu, notes, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'prog-today-seed',
+    'Bletët / Bumblebees',
+    today,
+    'Kafshët dhe Natyra / Animals and Nature',
+    '09:00 Rrethi i mëngjesit & kënga / Morning circle & songs\n10:00 Pikturim me gishta / Finger painting animals\n11:00 Lojëra në kopsht / Outdoor garden play\n14:30 Përralla: Ariu i Vogël / Storytime: The Little Bear',
+    'Mëngjesi: Qull tërshëre me mollë / Oatmeal with apples\nDreka: Supë me perime & pulë / Vegetable chicken soup\nZemra: Biskota & banane / Biscuits & bananas',
+    'Ju lutem sillni çizme shiu për lojën në kopsht / Please bring rain boots for the outdoor playground.',
+    'u-teacher',
+    new Date().toISOString(),
+    new Date().toISOString(),
+  )
+}

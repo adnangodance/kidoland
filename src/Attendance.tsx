@@ -4,6 +4,7 @@ import { createAttendanceRequests } from './attendance-requests'
 import { localCalendarDate, validDate } from './attendance-date'
 import { useAuth } from './auth'
 import { useI18n } from './i18n/LanguageContext'
+import ChildAvatar from './ChildAvatar'
 
 type Attempt = { childId: string; status: AttendanceStatus }
 type Roster = { context: string; children: Child[]; entries: AttendanceEntry[]; state: 'ready' | 'loading' | 'error'; sessionExpired?: boolean }
@@ -105,7 +106,7 @@ export default function Attendance({ initialDate }: { initialDate?: string }) {
         {currentRoster.children.map((child) => {
           const status = entries.get(child.id)?.status
           return <li key={child.id} className="attendance-row">
-            <div className="attendance-identity"><h2>{child.name}</h2><p>{t.attendanceGroup}: {child.groupName}</p></div>
+            <div className="attendance-identity"><ChildAvatar name={child.name} size={40} /><div><h2>{child.name}</h2><p>{t.attendanceGroup}: {child.groupName}</p></div>{child.allergies && <span className="allergy-badge">⚠️ {child.allergies}</span>}</div>
             <p className={`attendance-status ${status ?? 'unmarked'}`}>{statusLabel(status)}</p>
             {canMark && <div className="attendance-controls">
               {(['present', 'absent'] as const).map((choice) => <button key={choice} type="button"

@@ -97,6 +97,22 @@ test('pilot API authorization, management, consent, reports, fees and durable re
       await request('attendance', teacher, { childId, attendanceDate: date, status: 'present' })
       assert.equal((await request(`attendance?date=${date}`, familyToken)).data.attendance[0].childId, childId)
     })
+    await t.test('report image upload, persistence, correction and parent access', async () => {
+      const sampleImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+      const body = { childId, reportDate: date, mood: 'mood:happy', meals: 'meals:all', nap: 'nap:short', activities: 'activity:art', note: 'With photo', imageUrl: sampleImage }
+      const res = await request('reports', teacher, body)
+      assert.equal(res.status, 201)
+      assert.equal(res.data.report.imageUrl, sampleImage)
+      const list = await request(`reports?childId=${childId}&date=${date}`, familyToken)
+      assert.equal(list.data.reports[0].imageUrl, sampleImage)
+      const updated = await request('reports', teacher, { ...body, imageUrl: '' })
+      assert.equal(updated.status, 201)
+      assert.equal(updated.data.report.imageUrl, null)
+      const rechecked = await request(`reports?childId=${childId}&date=${date}`, familyToken)
+      assert.equal(rechecked.data.reports[0].imageUrl, null)
+      const hugeImage = 'data:image/png;base64,' + 'A'.repeat(8_000_001)
+      assert.equal((await request('reports', teacher, { ...body, imageUrl: hugeImage })).status, 400)
+    })
     const invoice = { childId, requestId: randomUUID(), periodLabel: 'October', dueDate: date, items: [{ description: 'Tuition', amountCents: 12345 }, { description: 'Meals', amountCents: 678 }] }
     await t.test('item sums, validation, create roles, parent isolation and mark paid', async () => {
       assert.equal((await request('invoices', parent, invoice)).status, 403)
@@ -226,4 +242,135 @@ test('review regressions: exact currency balances, uncapped pending invoices and
       assert.equal(euro('9007199254740991', lang, 'EURO'), expected)
     }
   } finally { await f.dispose() }
+})
+
+test('daily programs API: authorization, group isolation, and validation', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const director = await f.login('director')
+    const teacher = await f.login('teacher')
+    const parent = await f.login('parent')
+
+    const date = '2040-10-15'
+    const programDraft = {
+      groupName: 'Bletët / Bumblebees',
+      programDate: date,
+      theme: 'Space & Stars',
+      activities: '09:00 Circle time\n10:00 Rocket craft\n11:00 Garden play',
+      mealsMenu: 'Breakfast: Porridge\nLunch: Soup\nSnack: Apple',
+      notes: 'Wear comfortable shoes',
+    }
+
+    // Unauthorized
+    assert.equal((await request('programs')).status, 401)
+    assert.equal((await request('programs', undefined, programDraft)).status, 401)
+
+    // Parent cannot post program
+    assert.equal((await request('programs', parent, programDraft)).status, 403)
+
+    // Validation failures
+    assert.equal((await request('programs', teacher, { ...programDraft, programDate: 'invalid-date' })).status, 400)
+    assert.equal((await request('programs', teacher, { ...programDraft, theme: '' })).status, 400)
+    assert.equal((await request('programs', teacher, { ...programDraft, groupName: '' })).status, 400)
+
+    // Teacher can post program
+    const created = await request('programs', teacher, programDraft)
+    assert.equal(created.status, 201)
+    assert.equal(created.data.program.theme, 'Space & Stars')
+    assert.equal(created.data.program.groupName, 'Bletët / Bumblebees')
+
+    // Teacher can update existing program (UPSERT)
+    const updated = await request('programs', teacher, { ...programDraft, theme: 'Space & Planets Updated' })
+    assert.equal(updated.status, 201)
+    assert.equal(updated.data.program.theme, 'Space & Planets Updated')
+
+    // Parent sees program for their linked child's group
+    const parentGet = await request(`programs?date=${date}`, parent)
+    assert.equal(parentGet.status, 200)
+    assert.equal(parentGet.data.programs.length, 1)
+    assert.equal(parentGet.data.programs[0].theme, 'Space & Planets Updated')
+
+    // Parent querying an unlinked group returns empty
+    const unlinkedGet = await request(`programs?date=${date}&groupName=UnlinkedGroup`, parent)
+    assert.equal(unlinkedGet.status, 200)
+    assert.equal(unlinkedGet.data.programs.length, 0)
+
+    // Director can also GET and POST
+    const dirGet = await request(`programs?date=${date}`, director)
+    assert.equal(dirGet.status, 200)
+    assert.equal(dirGet.data.programs.length, 1)
+
+    const dirCreate = await request('programs', director, {
+      ...programDraft,
+      groupName: 'Fluturat / Butterflies',
+      theme: 'Spring & Butterflies',
+    })
+    assert.equal(dirCreate.status, 201)
+    assert.equal(dirCreate.data.program.groupName, 'Fluturat / Butterflies')
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('batch reports API and child allergies persistence', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const director = await f.login('director')
+    const teacher = await f.login('teacher')
+    const parent = await f.login('parent')
+
+    const date = '2040-10-16'
+
+    // Unauthorized
+    assert.equal((await request('reports/batch', undefined, { childIds: ['c-arta'], reportDate: date, mood: 'happy', meals: 'all', nap: '1h', activities: 'paint' })).status, 401)
+
+    // Parent cannot batch report
+    assert.equal((await request('reports/batch', parent, { childIds: ['c-arta'], reportDate: date, mood: 'happy', meals: 'all', nap: '1h', activities: 'paint' })).status, 403)
+
+    // Validation: empty childIds or invalid date
+    assert.equal((await request('reports/batch', teacher, { childIds: [], reportDate: date, mood: 'happy', meals: 'all', nap: '1h', activities: 'paint' })).status, 400)
+    assert.equal((await request('reports/batch', teacher, { childIds: ['c-arta'], reportDate: 'bad-date', mood: 'happy', meals: 'all', nap: '1h', activities: 'paint' })).status, 400)
+
+    // Teacher saves batch reports for both children in group
+    const batchRes = await request('reports/batch', teacher, {
+      childIds: ['c-arta', 'c-luan'],
+      reportDate: date,
+      mood: 'Happy & playful',
+      meals: 'Breakfast ✓ · Lunch ✓ · Snack ✓',
+      nap: '1h 20m',
+      activities: 'Outdoor play, painting, story time',
+      note: 'Great day together!',
+    })
+    assert.equal(batchRes.status, 201)
+    assert.equal(batchRes.data.count, 2)
+
+    // Verify reports persisted and reflect in GET /api/reports
+    const artaReports = await request(`reports?childId=c-arta&date=${date}`, parent)
+    assert.equal(artaReports.status, 200)
+    assert.equal(artaReports.data.reports.length, 1)
+    assert.equal(artaReports.data.reports[0].note, 'Great day together!')
+    assert.equal(artaReports.data.reports[0].allergies, 'Alergji në kikirik / Peanut allergy')
+
+    // Director edits child allergies
+    const patchRes = await request('children/c-luan', director, {
+      name: 'Luan Gashi',
+      groupName: 'Bletët / Bumblebees',
+      parentUserId: 'u-parent',
+      allergies: 'Alergji në qumësht / Milk allergy',
+    }, 'PATCH')
+    assert.equal(patchRes.status, 200)
+    assert.equal(patchRes.data.child.allergies, 'Alergji në qumësht / Milk allergy')
+
+    // Dashboard summary reflects allergies
+    const dash = await request(`dashboard?date=${date}`, parent)
+    assert.equal(dash.status, 200)
+    const luanSummary = dash.data.summary.childSummaries.find((c: any) => c.id === 'c-luan')
+    assert.equal(luanSummary.allergies, 'Alergji në qumësht / Milk allergy')
+  } finally {
+    await f.dispose()
+  }
 })

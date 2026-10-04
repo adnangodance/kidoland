@@ -31,6 +31,8 @@ bmad-advanced-elicitation's pick_methods.py.)
 
 Default output is lean text for an LLM to read; pass --json for structured output.
 """
+from __future__ import annotations
+
 import argparse
 import csv
 import hashlib

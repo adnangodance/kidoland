@@ -125,7 +125,16 @@ async function run() {
   await until(() => (field(translations.en.reportsNote) as HTMLTextAreaElement).value === 'Browser note')
   assert(field(translations.en.reportsMood).value === 'mood:happy', 'report correction preloads exact child/day values')
   await set(translations.en.reportsMood, 'mood:calm'); await set(translations.en.reportsNote, 'Corrected browser note')
+  const fileInput = field(translations.en.reportPhoto) as HTMLInputElement
+  const file = new File(['image-content'], 'pic.png', { type: 'image/png' })
+  const dt = new DataTransfer()
+  dt.items.add(file)
+  fileInput.files = dt.files
+  fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+  await until(() => main().querySelector('.report-image-preview img'))
+  assert(Boolean(main().querySelector('.report-image-preview img')), 'file input loads report image preview')
   button(translations.en.reportSave, main()); await until(() => main().textContent?.includes(translations.en.attendanceSaved)); fit('teacher report')
+  assert(Boolean(main().querySelector('.report-photo img')), 'saved report displays uploaded photo')
   button(`SQ · ${translations.en.langToggle}`)
   await until(() => document.documentElement.lang === 'sq')
   assert(field(translations.sq.reportsNote).value === 'Corrected browser note' && field(translations.sq.reportsMood).value === 'mood:calm', 'language switch translates controls and preserves report draft')
@@ -174,6 +183,7 @@ async function run() {
   assert(main().querySelectorAll('.attendance-row').length === 1 && !main().querySelector('.attendance-controls') && main().textContent?.includes(translations.en.attendancePresent), 'parent reads persisted linked attendance without write controls'); fit('parent attendance')
   await nav(translations.en.navReports); await until(() => main().querySelector('.roster-card'))
   assert(main().textContent?.includes('Corrected browser note') && main().textContent?.includes(translations.en.moodCalm) && !main().querySelector('form'), 'parent reads corrected linked report')
+  assert(Boolean(main().querySelector('.report-photo img')), 'parent reads uploaded report photo')
   await nav(translations.en.consentTitle); await until(() => main().querySelector('input[type=radio]'))
   main().querySelector<HTMLInputElement>('input[type=radio][value=true]')?.click()
   // Native consent radio values are intentionally independent of translated text.

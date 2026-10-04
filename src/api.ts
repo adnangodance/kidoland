@@ -15,6 +15,7 @@ export type Child = {
   groupName: string
   parentUserId: string
   photoConsent: boolean
+  allergies?: string
 }
 
 export type AttendanceStatus = 'present' | 'absent'
@@ -42,6 +43,8 @@ export type Report = {
   nap: string
   activities: string
   note: string
+  imageUrl?: string | null
+  allergies?: string
   createdAt: string
 }
 
@@ -132,10 +135,30 @@ export async function saveReport(
     nap: string
     activities: string
     note: string
+    imageUrl?: string | null
   },
 ) {
   return api<{ report: Report }>(
     '/api/reports',
+    { method: 'POST', body: JSON.stringify(body) },
+    token,
+  )
+}
+
+export async function saveBatchReports(
+  token: string,
+  body: {
+    childIds: string[]
+    reportDate: string
+    mood: string
+    meals: string
+    nap: string
+    activities: string
+    note?: string
+  },
+) {
+  return api<{ count: number }>(
+    '/api/reports/batch',
     { method: 'POST', body: JSON.stringify(body) },
     token,
   )
@@ -172,11 +195,45 @@ export async function markInvoicePaid(token: string, id: string) {
   )
 }
 
-export type ChildInput = Pick<Child, 'name' | 'groupName' | 'parentUserId'>
+export type ChildInput = Pick<Child, 'name' | 'groupName' | 'parentUserId'> & { allergies?: string }
 export const listParents = (token: string) => api<{ parents: User[] }>('/api/parents', {}, token)
 export const createParent = (token: string, body: { name: string; email: string; password: string }) => api<{ parent: User }>('/api/parents', { method: 'POST', body: JSON.stringify(body) }, token)
 export const createChild = (token: string, body: ChildInput & { requestId?: string }) => api<{ child: Child }>('/api/children', { method: 'POST', body: JSON.stringify(body) }, token)
 export const updateChild = (token: string, id: string, body: ChildInput) => api<{ child: Child }>(`/api/children/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }, token)
 export const saveConsent = (token: string, id: string, photoConsent: boolean) => api<{ child: Child }>(`/api/children/${encodeURIComponent(id)}/consent`, { method: 'PATCH', body: JSON.stringify({ photoConsent }) }, token)
-export type DashboardSummary = { date: string; children: number; present: number; absent: number; unmarked: number; reports: number; unpaidInvoices: number; unpaidBalances: { currency: string; amountCents: string }[]; childSummaries: { id: string; name: string; groupName: string; photoConsent: boolean; attendanceStatus: AttendanceStatus | null; hasReport: boolean }[] }
+export type DashboardSummary = { date: string; children: number; present: number; absent: number; unmarked: number; reports: number; unpaidInvoices: number; unpaidBalances: { currency: string; amountCents: string }[]; childSummaries: { id: string; name: string; groupName: string; photoConsent: boolean; attendanceStatus: AttendanceStatus | null; hasReport: boolean; allergies?: string }[] }
 export const getDashboard = (token: string, date: string) => api<{ summary: DashboardSummary }>(`/api/dashboard?date=${encodeURIComponent(date)}`, {}, token)
+
+export type DailyProgram = {
+  id: string
+  groupName: string
+  programDate: string
+  theme: string
+  activities: string
+  mealsMenu: string
+  notes: string
+  createdBy: string
+  createdByName?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type ProgramInput = {
+  groupName: string
+  programDate: string
+  theme: string
+  activities: string
+  mealsMenu: string
+  notes?: string
+}
+
+export async function listPrograms(token: string, date?: string, groupName?: string, signal?: AbortSignal) {
+  const query = new URLSearchParams()
+  if (date) query.set('date', date)
+  if (groupName) query.set('groupName', groupName)
+  return api<{ programs: DailyProgram[] }>(`/api/programs?${query}`, { signal }, token)
+}
+
+export async function saveProgram(token: string, body: ProgramInput) {
+  return api<{ program: DailyProgram }>('/api/programs', { method: 'POST', body: JSON.stringify(body) }, token)
+}
