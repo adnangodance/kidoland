@@ -19,6 +19,7 @@ import { Events } from './Events'
 import { StaffShifts } from './StaffShifts'
 import { Milestones } from './Milestones'
 import './App.css'
+import './theme.css'
 
 type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones'
 
