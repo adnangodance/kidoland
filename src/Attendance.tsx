@@ -4,8 +4,12 @@ import { createAttendanceRequests } from './attendance-requests'
 import { localCalendarDate, validDate } from './attendance-date'
 import { useAuth } from './auth-context'
 import { useI18n } from './i18n/language-context'
+
 import ChildAvatar from './ChildAvatar'
+import { SeaGodanciBadge } from './child-highlight'
+import { isSeaGodanci } from './child-highlight-util'
 import Icon from './Icon'
+
 
 type Attempt = { childId: string; status: AttendanceStatus }
 type Roster = { context: string; children: Child[]; entries: AttendanceEntry[]; state: 'ready' | 'loading' | 'error'; sessionExpired?: boolean }
@@ -116,8 +120,8 @@ export default function Attendance({ initialDate }: { initialDate?: string }) {
       {ready && <ul className="attendance-roster">
         {matchingChildren.map((child) => {
           const status = entries.get(child.id)?.status
-          return <li key={child.id} className="attendance-row">
-            <div className="attendance-identity"><ChildAvatar name={child.name} size={40} /><div><h2>{child.name}</h2><p>{t.attendanceGroup}: {child.groupName}</p></div>{child.allergies && <span className="allergy-badge">⚠️ {child.allergies}</span>}</div>
+          return <li key={child.id} className={`attendance-row ${isSeaGodanci(child.name) ? 'sea-godanci-row' : ''}`}>
+            <div className="attendance-identity"><ChildAvatar name={child.name} size={40} /><div><h2>{child.name} <SeaGodanciBadge name={child.name} /></h2><p>{t.attendanceGroup}: {child.groupName}</p></div>{child.allergies && <span className="allergy-badge">⚠️ {child.allergies}</span>}</div>
             <p className={`attendance-status ${status ?? 'unmarked'}`}>{statusLabel(status)}</p>
             {canMark && <div className="attendance-controls">
               {(['present', 'absent'] as const).map((choice) => <button key={choice} type="button"

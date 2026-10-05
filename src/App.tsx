@@ -23,17 +23,19 @@ import KimiIcon from './KimiIcon'
 import KimiNavigation from './KimiNavigation'
 import PageFinder from './PageFinder'
 import { Documents } from './Documents'
+import { SleepTracker } from './SleepTracker'
 import './App.css'
 import './theme.css'
 import './Sidebar.css'
 import './Kindergarten.css'
 
-type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents'
+type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents' | 'sleep'
 
-const DEMO = [
-  { email: 'parent@kidoland.demo', password: 'parent123', roleKey: 'roleParent' as const },
-  { email: 'teacher@kidoland.demo', password: 'teacher123', roleKey: 'roleTeacher' as const },
-  { email: 'director@kidoland.demo', password: 'director123', roleKey: 'roleDirector' as const },
+const DEMO: { email: string; password: string; roleKey: 'roleParent' | 'roleTeacher' | 'roleDirector'; name?: string }[] = [
+  { email: 'adnan@kidoland.demo', password: 'parent123', roleKey: 'roleParent', name: 'Adnan Godanci (Parent)' },
+  { email: 'parent@kidoland.demo', password: 'parent123', roleKey: 'roleParent' },
+  { email: 'teacher@kidoland.demo', password: 'teacher123', roleKey: 'roleTeacher' },
+  { email: 'director@kidoland.demo', password: 'director123', roleKey: 'roleDirector' },
 ]
 
 function Shell() {
@@ -59,6 +61,7 @@ function Shell() {
       { view: 'reports', label: t.navReports, icon: 'reports' },
       { view: 'program', label: t.navProgram, icon: 'program' },
       { view: 'meals', label: t.navMeals, icon: 'meals' },
+      { view: 'sleep', label: t.navSleepTracker, icon: 'sleep' },
     ] },
     { label: t.navCommunity, items: [
       { view: 'messages', label: t.navMessages, icon: 'messages' },
@@ -168,6 +171,7 @@ function Shell() {
         {user && activeView === 'staff' && <StaffShifts />}
         {user && activeView === 'milestones' && <Milestones />}
         {user && activeView === 'documents' && <Documents />}
+        {user && activeView === 'sleep' && <SleepTracker />}
         {user && activeView === 'children' && <Children />}
       </main>
       <footer className="footer"><span className="footer-mark" aria-hidden="true"><Icon name="leaf" size={15} /></span><p>{t.footer}</p></footer>
@@ -276,7 +280,7 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
               setPassword(d.password)
             }}
           >
-            <Icon name={d.roleKey === 'roleParent' ? 'children' : d.roleKey === 'roleTeacher' ? 'leaf' : 'dashboard'} /><span><strong>{t[d.roleKey]}</strong><small>{d.email}</small></span><Icon name="arrow" size={16} />
+            <Icon name={d.roleKey === 'roleParent' ? 'children' : d.roleKey === 'roleTeacher' ? 'leaf' : 'dashboard'} /><span><strong>{d.name || t[d.roleKey]}</strong><small>{d.email}</small></span><Icon name="arrow" size={16} />
           </button>
         ))}
       </div>

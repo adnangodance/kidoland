@@ -171,13 +171,13 @@ async function run() {
     ['payments', translations.en.navPayments], ['documents', translations.en.navDocuments],
     ['absences', translations.en.navAbsences],
     ['incidents', translations.en.navIncidents], ['milestones', translations.en.navMilestones],
-    ['staff', translations.en.navStaffShifts],
+    ['staff', translations.en.navStaffShifts], ['sleep', translations.en.navSleepTracker],
   ])
   const sidebarPages = [...document.querySelectorAll<HTMLButtonElement>('.sidebar button[data-view]')]
   assert(sidebarPages.length === expectedPages.size && sidebarPages.every((element) => element.querySelector('span:last-child')?.textContent === expectedPages.get(element.dataset.view!)), 'sidebar identifies all working Kidoland destinations with their own labels')
   assert(new Set(sidebarPages.map((element) => element.dataset.view)).size === expectedPages.size && sidebarPages.slice(0, 5).map((element) => element.dataset.view).join('|') === 'dashboard|attendance|reports|program|meals' && sidebarPages.at(-1)?.dataset.view === 'children', 'sidebar has unique destinations, daily care first, and the child directory in the bottom section')
   assert(document.querySelector('.sidebar-search')!.textContent?.includes(translations.en.searchPages) && !/My Kimi|New chat|New project|Projects|Chats/.test(document.querySelector('.sidebar')!.textContent!), 'sidebar search describes its action and has no copied product names')
-  assert(document.querySelectorAll('.sidebar button[data-view] .kimi-icon svg').length === 16, 'each Kidoland destination keeps the reference SVG icon treatment')
+  assert(document.querySelectorAll('.sidebar button[data-view] .kimi-icon svg').length === 17, 'each Kidoland destination keeps the reference SVG icon treatment')
   await openSidebar()
   const morePages = document.querySelector<HTMLButtonElement>('.kimi-more')!
   const moreSection = document.getElementById(morePages.getAttribute('aria-controls')!)!
@@ -290,6 +290,7 @@ async function run() {
     ['announcements', 'navAnnouncements'], ['moments', 'navMoments'], ['events', 'navEvents'],
     ['children', 'childrenTitle'], ['payments', 'navPayments'], ['documents', 'navDocuments'], ['absences', 'navAbsences'],
     ['incidents', 'navIncidents'], ['milestones', 'navMilestones'], ['staff', 'navStaffShifts'],
+    ['sleep', 'navSleepTracker'],
   ] as const)
   await openSidebar()
   assert([...document.querySelectorAll<HTMLButtonElement>('.sidebar button[data-view]')].every((element) => element.querySelector('span:last-child')?.textContent === translations.sq[sqKeys.get(element.dataset.view!)!]) && document.querySelector('.nav-group-label')?.textContent === translations.sq.navManagement && document.querySelector('.sidebar-search > span:not(.kimi-icon)')?.textContent === translations.sq.searchPages, 'all sidebar pages, the management heading, and search action use Albanian labels')
@@ -414,6 +415,11 @@ async function run() {
   assert(main().textContent?.includes(translations.en.statTotalDocs), 'director navigates to documents hub and views summary stats'); fit('documents hub')
   assert(Boolean(main().querySelector('.doc-card')), 'director sees seeded student document cards')
   assert(main().textContent?.includes(translations.en.statusVerified), 'director views verified status badges on child documents')
+  await nav(translations.en.navSleepTracker); await until(() => main().textContent?.includes(translations.en.sleepTrackerTitle))
+  await until(() => main().querySelector('.sleep-card'))
+  assert(main().textContent?.includes(translations.en.statTotalNapTime), 'director navigates to sleep tracker and views rest summary'); fit('sleep tracker')
+  assert(Boolean(main().querySelector('.sleep-card')), 'director sees seeded student nap session cards')
+  assert(main().textContent?.includes(translations.en.qualityRestful), 'director views restful sleep quality indicators')
   await nav(translations.en.childrenTitle); await until(() => main().querySelector('.roster-card'))
   assert([...main().querySelectorAll('.roster-card')].find((card) => card.textContent?.includes('Browser Child'))?.textContent?.includes(translations.en.allowed) && !main().querySelector('input[type=radio]'), 'staff reads persisted photo permission without consent controls')
   await nav(translations.en.navPayments); await until(() => main().querySelector('.roster-card'))

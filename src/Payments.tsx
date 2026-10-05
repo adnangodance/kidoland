@@ -17,6 +17,9 @@ import { useAuth } from './auth-context'
 import { useI18n } from './i18n/language-context'
 import { localCalendarDate, validDate } from './attendance-date.js'
 import { displayDate, euro, useAlive } from './pilot-utils'
+import { SeaGodanciBadge } from './child-highlight'
+import { isSeaGodanci } from './child-highlight-util'
+
 
 type PendingInvoice = {
   form: { childId: string; periodLabel: string; dueDate: string; notes: string }
@@ -184,7 +187,7 @@ export default function Payments() {
     {/* Staff Invoice Creator */}
     {canCreate && !loading && error !== 'load' && children.length > 0 && <form className="login-form invoice-form" onSubmit={create}><h2 className="form-section-title">{t.paymentsCreate}</h2>
       <fieldset disabled={busy}>
-        <label>{t.paymentsChild}<select required value={form.childId} onChange={(e) => { setSaved(false); setForm({ ...form, childId: e.target.value }) }}>{children.map((child) => <option key={child.id} value={child.id}>{child.name} · {child.groupName}</option>)}</select></label>
+        <label>{t.paymentsChild}<select required value={form.childId} onChange={(e) => { setSaved(false); setForm({ ...form, childId: e.target.value }) }}>{children.map((child) => <option key={child.id} value={child.id}>{isSeaGodanci(child.name) ? '⭐ ' : ''}{child.name} · {child.groupName}</option>)}</select></label>
         <label>{t.paymentsPeriod}<input required maxLength={200} value={form.periodLabel} onChange={(e) => { setSaved(false); setForm({ ...form, periodLabel: e.target.value }) }} /></label>
         <label>{t.paymentsDueDate}<input required type="date" value={form.dueDate} onChange={(e) => { setSaved(false); setForm({ ...form, dueDate: e.target.value }) }} /></label>
 
@@ -207,8 +210,8 @@ export default function Payments() {
 
     {/* Invoices List */}
     {!loading && invoices.map((invoice) => (
-      <article className="roster-card invoice-card" key={invoice.id}>
-        <h2>{invoice.childName} · {invoice.periodLabel}</h2>
+      <article className={`roster-card invoice-card ${isSeaGodanci(invoice.childName) ? 'sea-godanci-card' : ''}`} key={invoice.id}>
+        <h2>{invoice.childName} <SeaGodanciBadge name={invoice.childName} /> · {invoice.periodLabel}</h2>
         <p>{t.paymentsDue}: {displayDate(invoice.dueDate, lang)}</p>
         <ul className="fee-list">
           {invoice.items.map((item) => (

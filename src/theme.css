@@ -831,3 +831,70 @@ kbd { font-family: inherit; font-size: 10px; color: #74786c; }
   .workspace > main { margin-left: 0; width: 100%; }
   .panel { padding: 0; max-width: none; }
 }
+
+/* Sea Godanci Special Highlighting */
+.sea-godanci-card,
+.roster-card.sea-godanci-card,
+.attendance-row.sea-godanci-row,
+.day-child-card.sea-godanci-card,
+article.roster-card:has(.sea-godanci-badge) {
+  border: 2px solid #f59e0b !important;
+  background: linear-gradient(135deg, rgba(254, 243, 199, 0.45) 0%, rgba(255, 255, 255, 0.98) 100%) !important;
+  box-shadow: 0 4px 18px rgba(245, 158, 11, 0.22) !important;
+  position: relative;
+}
+
+.sea-godanci-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff !important;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  box-shadow: 0 2px 6px rgba(217, 119, 6, 0.35);
+  margin-left: 8px;
+  vertical-align: middle;
+  text-transform: none;
+  line-height: 1.2;
+}
+
+.sea-godanci-star {
+  font-size: 13px;
+  color: #fef08a;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.25);
+}
+
+.sea-godanci-name {
+  font-weight: 700;
+}
+
+.sea-godanci-parent-tag {
+  opacity: 0.95;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.18);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 2px;
+}
+
+.child-avatar.sea-godanci-avatar {
+  background: linear-gradient(135deg, #fef08a 0%, #f59e0b 100%) !important;
+  color: #78350f !important;
+  border: 2px solid #d97706 !important;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.55) !important;
+  font-weight: 800 !important;
+  position: relative;
+}
+
+.child-avatar.sea-godanci-avatar::after {
+  content: '⭐';
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: 11px;
+  line-height: 1;
+}

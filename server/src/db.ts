@@ -345,7 +345,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
   );
   CREATE INDEX IF NOT EXISTS child_documents_child ON child_documents(child_id);
   CREATE INDEX IF NOT EXISTS child_documents_status ON child_documents(status);
-  CREATE INDEX IF NOT EXISTS child_documents_type ON child_documents(document_type);`)
+  CREATE INDEX IF NOT EXISTS child_documents_type ON child_documents(document_type);
+
+  CREATE TABLE IF NOT EXISTS child_sleep_logs (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    log_date TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT,
+    duration_minutes INTEGER,
+    quality TEXT NOT NULL CHECK(quality IN ('restful', 'light', 'restless', 'refused_nap')),
+    notes TEXT,
+    recorded_by TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS child_sleep_logs_child_date ON child_sleep_logs(child_id, log_date);
+  CREATE INDEX IF NOT EXISTS child_sleep_logs_date ON child_sleep_logs(log_date);
+`)
 
 export type DocumentType = 'enrollment_contract' | 'vaccination_record' | 'birth_certificate' | 'medical_clearance' | 'custody_legal' | 'other'
 export type DocumentStatus = 'pending_review' | 'verified' | 'rejected' | 'expired'
@@ -365,6 +382,22 @@ export type DbChildDocument = {
   verified_by: string | null
   verified_at: string | null
   rejection_reason: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type SleepQuality = 'restful' | 'light' | 'restless' | 'refused_nap'
+
+export type DbChildSleepLog = {
+  id: string
+  child_id: string
+  log_date: string
+  start_time: string
+  end_time: string | null
+  duration_minutes: number | null
+  quality: SleepQuality
+  notes: string | null
+  recorded_by: string
   created_at: string
   updated_at: string
 }
@@ -545,6 +578,111 @@ if (childCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-parent'
   ).run('c-luan', 'Luan Gashi', 'Bletët / Bumblebees', 'u-parent', '')
 }
 db.prepare("UPDATE children SET allergies = 'Alergji në kikirik / Peanut allergy' WHERE id = 'c-arta' AND (allergies IS NULL OR allergies = '')").run()
+
+if (!process.env.KIDOLAND_DB_PATH) {
+  // Update or insert Adnan Godanci as parent
+  db.prepare(`
+    INSERT INTO users (id, name, email, password_hash, role)
+    VALUES ('u-adnan', 'Adnan Godanci', 'adnan@kidoland.demo', ?, 'parent')
+    ON CONFLICT(id) DO UPDATE SET name = 'Adnan Godanci'
+  `).run(bcrypt.hashSync('parent123', 10))
+
+  // Also ensure u-parent displays Adnan Godanci
+  db.prepare("UPDATE users SET name = 'Adnan Godanci' WHERE id = 'u-parent'").run()
+
+  // Additional parent accounts
+  db.prepare(`
+    INSERT OR IGNORE INTO users (id, name, email, password_hash, role)
+    VALUES ('u-parent2', 'Teuta Kelmendi', 'teuta@kidoland.demo', ?, 'parent')
+  `).run(bcrypt.hashSync('parent123', 10))
+  db.prepare(`
+    INSERT OR IGNORE INTO users (id, name, email, password_hash, role)
+    VALUES ('u-parent3', 'Besnik Kastrati', 'besnik@kidoland.demo', ?, 'parent')
+  `).run(bcrypt.hashSync('parent123', 10))
+  db.prepare(`
+    INSERT OR IGNORE INTO users (id, name, email, password_hash, role)
+    VALUES ('u-parent4', 'Linda Morina', 'linda@kidoland.demo', ?, 'parent')
+  `).run(bcrypt.hashSync('parent123', 10))
+
+  // Seed Sea Godanci and full kindergarten roster
+  const moreChildren = [
+    { id: 'c-sea', name: 'Sea Godanci', group_name: 'Bletët / Bumblebees', parent_user_id: 'u-parent', allergies: '', photo_consent: 1 },
+    { id: 'c-rozafa', name: 'Rozafa Kelmendi', group_name: 'Fluturat / Butterflies', parent_user_id: 'u-parent2', allergies: '', photo_consent: 1 },
+    { id: 'c-dardan', name: 'Dardan Berisha', group_name: 'Fluturat / Butterflies', parent_user_id: 'u-parent2', allergies: 'Pluhur / Dust', photo_consent: 0 },
+    { id: 'c-yllka', name: 'Yllka Kastrati', group_name: 'Yjet / Little Stars', parent_user_id: 'u-parent3', allergies: '', photo_consent: 1 },
+    { id: 'c-gent', name: 'Gent Shala', group_name: 'Yjet / Little Stars', parent_user_id: 'u-parent3', allergies: '', photo_consent: 1 },
+    { id: 'c-hana', name: 'Hana Morina', group_name: 'Delfinët / Dolphins', parent_user_id: 'u-parent4', allergies: 'Laktozë / Lactose', photo_consent: 0 },
+    { id: 'c-jon', name: 'Jon Thaçi', group_name: 'Delfinët / Dolphins', parent_user_id: 'u-parent4', allergies: '', photo_consent: 1 },
+    { id: 'c-diell', name: 'Diell Gashi', group_name: 'Bletët / Bumblebees', parent_user_id: 'u-parent', allergies: '', photo_consent: 1 },
+  ]
+
+  for (const c of moreChildren) {
+    db.prepare(`
+      INSERT INTO children (id, name, group_name, parent_user_id, allergies, photo_consent)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        group_name = excluded.group_name,
+        parent_user_id = excluded.parent_user_id,
+        allergies = excluded.allergies,
+        photo_consent = excluded.photo_consent
+    `).run(c.id, c.name, c.group_name, c.parent_user_id, c.allergies, c.photo_consent)
+  }
+
+  // Seed daily report for Sea Godanci if not exists
+  const today = localCalendarDate()
+  db.prepare(`
+    INSERT OR IGNORE INTO reports (id, child_id, teacher_user_id, report_date, mood, meals, nap, activities, note, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'r-sea-seed',
+    'c-sea',
+    'u-teacher',
+    today,
+    'mood:happy',
+    'meals:all',
+    'nap:short',
+    'activity:outdoor|activity:art|activity:music',
+    'Sea had an exceptional day! Very creative during arts and crafts, loved circle time and played joyfully with everyone. ⭐',
+    new Date().toISOString()
+  )
+
+  // Seed attendance for Sea Godanci (present today)
+  db.prepare(`
+    INSERT OR IGNORE INTO attendance (id, child_id, attendance_date, status, marked_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    'att-sea-today',
+    'c-sea',
+    today,
+    'present',
+    'u-teacher',
+    new Date().toISOString()
+  )
+
+  // Seed invoice for Sea Godanci
+  db.prepare(`
+    INSERT OR IGNORE INTO invoices (id, child_id, amount_cents, currency, period_label, status, due_date, paid_at, created_by, created_at, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'inv-sea-oct',
+    'c-sea',
+    18000,
+    'EUR',
+    'October 2026',
+    'paid',
+    '2026-10-05',
+    new Date().toISOString(),
+    'u-director',
+    new Date().toISOString(),
+    'Tuition - October 2026'
+  )
+
+  db.prepare(`
+    INSERT OR IGNORE INTO invoice_items (id, invoice_id, description, amount_cents, position)
+    VALUES (?, ?, ?, ?, ?)
+  `).run('item-sea-tuition', 'inv-sea-oct', 'tuition', 18000, 0)
+}
 
 const reportCount = db.prepare('SELECT COUNT(*) AS c FROM reports').get() as { c: number }
 if (reportCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get() && db.prepare("SELECT id FROM users WHERE id = 'u-teacher'").get()) {
@@ -1258,4 +1396,44 @@ if (docCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'"
     now,
     now,
   )
+}
+
+const sleepCount = db.prepare('SELECT COUNT(*) AS c FROM child_sleep_logs').get() as { c: number }
+if (sleepCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get() && db.prepare("SELECT id FROM users WHERE id = 'u-teacher'").get()) {
+  const insertSleep = db.prepare(`
+    INSERT INTO child_sleep_logs (id, child_id, log_date, start_time, end_time, duration_minutes, quality, notes, recorded_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const today = localCalendarDate()
+  const now = new Date().toISOString()
+
+  insertSleep.run(
+    'sl-arta-1',
+    'c-arta',
+    today,
+    '12:30',
+    '14:30',
+    120,
+    'restful',
+    'Fjeti e qetë me muzikë relaksuese. / Slept peacefully with lullaby music.',
+    'u-teacher',
+    now,
+    now,
+  )
+
+  if (db.prepare("SELECT id FROM children WHERE id = 'c-luan'").get()) {
+    insertSleep.run(
+      'sl-luan-1',
+      'c-luan',
+      today,
+      '13:00',
+      '14:15',
+      75,
+      'light',
+      'U zgjua një herë për pak ujë dhe u kthye në pushim. / Woke up once for water.',
+      'u-teacher',
+      now,
+      now,
+    )
+  }
 }

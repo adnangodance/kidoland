@@ -3619,3 +3619,479 @@ label.choice, .login-form label.choice { display: flex; align-items: center; gap
   border-radius: var(--kd-radius-sm, 14px);
   border: 1px dashed var(--kd-line, #ececf3);
 }
+
+/* ==========================================================================
+   Daily Nap & Sleep Quality Tracker
+   ========================================================================== */
+.sleep-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+}
+
+.sleep-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  background: var(--kd-surface, #ffffff);
+  padding: 0.85rem;
+  border-radius: var(--kd-radius-sm, 14px);
+  border: 1px solid var(--kd-line, #ececf3);
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.sleep-filter-bar .filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.sleep-filter-bar label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--kd-ink-soft, #4b4a57);
+}
+
+/* Sleep Summary Metric Cards */
+.sleep-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.75rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sleep-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border-radius: var(--kd-radius-sm, 14px);
+  border: 1px solid var(--kd-line, #ececf3);
+  background: var(--kd-surface, #ffffff);
+  box-shadow: var(--kd-shadow, 0 1px 2px rgba(29, 27, 38, 0.04));
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.sleep-summary-card.total-time {
+  background: linear-gradient(135deg, #f0f7ff, #ffffff);
+  border-color: #bfdbfe;
+}
+
+.sleep-summary-card.active-nappers {
+  background: linear-gradient(135deg, #f3e8ff, #ffffff);
+  border-color: #d8b4fe;
+}
+
+.sleep-summary-card.restful-count {
+  background: linear-gradient(135deg, #f0fdf4, #ffffff);
+  border-color: #bbf7d0;
+}
+
+.sleep-summary-card.restless-count {
+  background: linear-gradient(135deg, #fffbeb, #ffffff);
+  border-color: #fde68a;
+}
+
+/* Active Room Nap Monitor */
+.active-room-section {
+  background: linear-gradient(135deg, #faf5ff, #ffffff);
+  border: 1.5px solid #e9d5ff;
+  border-radius: var(--kd-radius, 16px);
+  padding: 1.15rem;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.active-room-section h2 {
+  margin: 0 0 0.85rem;
+  font-size: 1.1rem;
+  color: #6b21a8;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.active-napper-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.85rem;
+}
+
+.active-napper-card {
+  background: #ffffff;
+  border: 1px solid #d8b4fe;
+  border-radius: 12px;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: 0 2px 6px rgba(107, 33, 168, 0.06);
+}
+
+.active-napper-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pulsing-sleep-icon {
+  font-size: 1.4rem;
+  display: inline-block;
+  animation: sleepPulse 2.5s infinite ease-in-out;
+}
+
+@keyframes sleepPulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+.napper-child-name {
+  font-size: 0.95rem;
+  color: var(--kd-ink, #1d1b26);
+  display: block;
+}
+
+.napper-group-name {
+  font-size: 0.78rem;
+  color: var(--kd-muted, #74727f);
+}
+
+.napper-time-badge {
+  font-size: 0.84rem;
+  color: #7e22ce;
+  background: #f5f3ff;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  display: inline-block;
+}
+
+.napper-notes {
+  margin: 0;
+  font-size: 0.82rem;
+  font-style: italic;
+  color: var(--kd-ink-soft, #4b4a57);
+}
+
+.btn-wake-up {
+  margin-top: auto;
+  font-size: 0.85rem;
+  min-height: 40px;
+  border-radius: 8px;
+  background: #8b5cf6;
+  border-color: #7c3aed;
+}
+
+.btn-wake-up:hover {
+  background: #7c3aed;
+}
+
+/* Sleep Log Cards */
+.sleep-logs-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sleep-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.15rem;
+  border-radius: var(--kd-radius, 16px);
+  border: 1px solid var(--kd-line, #ececf3);
+  background: var(--kd-surface, #ffffff);
+  box-shadow: var(--kd-shadow, 0 1px 2px rgba(29, 27, 38, 0.04));
+  box-sizing: border-box;
+  min-width: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sleep-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--kd-shadow-hover, 0 4px 12px rgba(59, 108, 246, 0.1));
+}
+
+.sleep-card.status-restful {
+  border-left: 4px solid #3fbf7f;
+}
+
+.sleep-card.status-light {
+  border-left: 4px solid #38bdf8;
+}
+
+.sleep-card.status-restless {
+  border-left: 4px solid #f59e0b;
+}
+
+.sleep-card.status-refused_nap {
+  border-left: 4px solid #ef4444;
+}
+
+.sleep-card.is-sleeping {
+  border: 1.5px solid #c084fc;
+  background: linear-gradient(135deg, #faf5ff, #ffffff);
+}
+
+.sleep-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.sleep-header-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sleep-icon-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 12px;
+  background: var(--kd-blue-soft, #eaf0ff);
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+.sleep-child-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 750;
+  color: var(--kd-ink, #1d1b26);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.sleep-group-subtitle {
+  display: inline-block;
+  font-size: 0.8rem;
+  color: var(--kd-muted, #74727f);
+}
+
+.sleep-status-chips .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.badge-sleeping {
+  background: #f3e8ff;
+  color: #7e22ce;
+  border: 1px solid #d8b4fe;
+}
+
+.badge-restful {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.badge-light {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.badge-restless {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.badge-refused_nap {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+/* Sleep Times Grid */
+.sleep-times-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  background: var(--kd-bg, #f8f8fb);
+  padding: 0.65rem;
+  border-radius: 10px;
+}
+
+.time-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: center;
+}
+
+.time-tile.highlight {
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 0.2rem;
+  border: 1px solid #e2e8f0;
+}
+
+.time-label {
+  font-size: 0.72rem;
+  color: var(--kd-muted, #74727f);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.time-val {
+  font-size: 0.95rem;
+  font-weight: 750;
+  color: var(--kd-ink, #1d1b26);
+}
+
+.sleep-notes {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--kd-ink-soft, #4b4a57);
+  background: var(--kd-bg, #f8f8fb);
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-style: italic;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.sleep-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--kd-line, #ececf3);
+}
+
+.sleep-recorder-info {
+  font-size: 0.8rem;
+  color: var(--kd-muted, #74727f);
+}
+
+.sleep-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.btn-quick-wake {
+  background: #f3e8ff;
+  border: 1px solid #d8b4fe;
+  color: #7e22ce;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  cursor: pointer;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+
+.btn-quick-wake:hover {
+  background: #e9d5ff;
+}
+
+.btn-edit-sleep {
+  background: transparent;
+  border: 1px solid var(--kd-line, #cbd5e1);
+  color: var(--kd-ink-soft, #4b4a57);
+  font-size: 0.82rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  cursor: pointer;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+
+.btn-edit-sleep:hover {
+  background: var(--kd-bg, #f8f8fb);
+}
+
+.btn-delete-sleep {
+  background: transparent;
+  border: 1px solid var(--kd-line, #cbd5e1);
+  color: var(--kd-muted, #64748b);
+  border-radius: 8px;
+  padding: 0.4rem 0.65rem;
+  cursor: pointer;
+  min-height: 40px;
+  min-width: 40px;
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+}
+
+.btn-delete-sleep:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+/* Sleep Form & Modals */
+.sleep-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.checkbox-group {
+  margin: 0.25rem 0;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--kd-ink, #1d1b26);
+}
+
+.checkbox-label input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+}
+
+.wake-summary-hint {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #6b21a8;
+  background: #faf5ff;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #e9d5ff;
+}

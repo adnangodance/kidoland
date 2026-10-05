@@ -7,9 +7,12 @@ import { useI18n } from './i18n/language-context'
 import { localCalendarDate, validDate } from './attendance-date.js'
 import { euro } from './pilot-utils'
 import ChildAvatar from './ChildAvatar'
+import { SeaGodanciBadge } from './child-highlight'
+import { isSeaGodanci } from './child-highlight-util'
+
 import Icon, { type IconName } from './Icon'
 
-type Destination = 'attendance' | 'reports' | 'payments' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents'
+type Destination = 'attendance' | 'reports' | 'payments' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents' | 'sleep'
 
 function PlaygroundArt() {
   return <svg className="playground-art" viewBox="0 0 320 210" fill="none" aria-hidden="true" focusable="false">
@@ -83,8 +86,8 @@ export default function Dashboard({ go }: { go: (view: Destination, context?: { 
       <div className="metrics">{metrics.map((metric) => <article className={`metric-card tone-${metric.tone}`} key={metric.label}><div className="metric-top"><h2>{metric.label}</h2><span className="metric-icon"><Icon name={metric.icon} size={20} /></span></div><strong>{metric.value}</strong>{metric.icon === 'payments' && <p className="metric-detail">{summary.unpaidBalances.map((balance) => euro(balance.amountCents, lang, balance.currency)).join(' · ') || '—'}</p>}</article>)}</div>
       {parent ? <>
         <div className="section-title"><h2>{t.familyOverview}</h2><span>{date}</span></div>
-        <div className="family-grid">{summary.childSummaries.map((child) => <article className="roster-card family-card" key={child.id}>
-          <div className="card-avatar-heading"><ChildAvatar name={child.name} size={44} /><div><h2>{child.name}</h2><p className="card-subtitle">{child.groupName}</p></div><Icon name="leaf" size={22} /></div>
+        <div className="family-grid">{summary.childSummaries.map((child) => <article className={`roster-card family-card ${isSeaGodanci(child.name) ? 'sea-godanci-card' : ''}`} key={child.id}>
+          <div className="card-avatar-heading"><ChildAvatar name={child.name} size={44} /><div><h2>{child.name} <SeaGodanciBadge name={child.name} /></h2><p className="card-subtitle">{child.groupName}</p></div><Icon name="leaf" size={22} /></div>
           {child.allergies && <p className="allergy-badge"><span aria-hidden="true">⚠️ </span><strong>{t.allergies}:</strong> {child.allergies}</p>}
           <div className="family-statuses"><div><span>{t.attendanceTitle}</span><strong className={`attendance-status ${child.attendanceStatus || 'unmarked'}`}>{statusLabel(child.attendanceStatus)}</strong></div><div><span>{t.navReports}</span><strong className={child.hasReport ? 'record-ready' : 'record-waiting'}>{child.hasReport ? t.reportReady : t.reportEmpty}</strong></div><div><span>{t.permission}</span><strong>{child.photoConsent ? t.allowed : t.notAllowed}</strong></div></div>
           <button className="btn ghost" onClick={() => go('reports', { childId: child.id, date })}>{t.dashRead}<Icon name="arrow" size={16} /></button>
@@ -104,8 +107,8 @@ export default function Dashboard({ go }: { go: (view: Destination, context?: { 
       </div>}
       {!parent && <section className="day-register">
         <div className="section-title"><h2>{t.childrenToday}<span className="section-count">{summary.children}</span></h2><label className="search-field"><Icon name="search" size={17} /><input type="search" aria-label={t.searchChildren} placeholder={t.searchChildren} value={search} onChange={(event) => setSearch(event.target.value)} /></label></div>
-        <div className="day-children-grid">{children.map((child) => <article className="day-child-card" key={child.id}>
-          <div className="register-child"><ChildAvatar name={child.name} size={48} /><div><h3>{child.name}</h3><small>{child.groupName}</small></div></div>
+        <div className="day-children-grid">{children.map((child) => <article className={`day-child-card ${isSeaGodanci(child.name) ? 'sea-godanci-card' : ''}`} key={child.id}>
+          <div className="register-child"><ChildAvatar name={child.name} size={48} /><div><h3>{child.name} <SeaGodanciBadge name={child.name} /></h3><small>{child.groupName}</small></div></div>
           {child.allergies && <p className="allergy-badge"><span aria-hidden="true">⚠️ </span><strong>{t.allergies}:</strong> {child.allergies}</p>}
           <div className="day-child-status"><div><span>{t.attendanceTitle}</span><span className={`attendance-status ${child.attendanceStatus || 'unmarked'}`}>{statusLabel(child.attendanceStatus)}</span></div><div><span>{t.navReports}</span><span className={child.hasReport ? 'record-ready' : 'record-waiting'}><Icon name={child.hasReport ? 'check' : 'clock'} size={14} />{child.hasReport ? t.reportReady : t.notWritten}</span></div></div>
           <button type="button" className="row-action" aria-label={`${child.hasReport ? t.dashRead : t.dashWrite} · ${child.name}`} onClick={() => go('reports', { childId: child.id, date })}>{child.hasReport ? t.dashRead : t.dashWrite}<Icon name="arrow" size={16} /></button>

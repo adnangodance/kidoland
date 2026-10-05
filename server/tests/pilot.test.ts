@@ -1215,3 +1215,73 @@ test('school document hub and digital enrollment contracts', async () => {
     await f.dispose()
   }
 })
+
+test('daily nap and sleep quality tracker', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const director = await f.login('director')
+    const teacher = await f.login('teacher')
+    const parent = await f.login('parent')
+    const d = new Date()
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+    // 1. Fetch seeded sleep logs for director
+    const dirLogs = await request(`sleep-logs?date=${today}`, director)
+    assert.equal(dirLogs.status, 200)
+    assert.ok(Array.isArray(dirLogs.data.logs))
+    assert.ok(dirLogs.data.logs.length >= 2)
+    assert.ok(dirLogs.data.summary.totalSleepMinutes >= 195)
+    assert.ok(dirLogs.data.summary.restfulCount >= 1)
+
+    // 2. Parent reads only their linked child (Arta)
+    const parentLogs = await request(`sleep-logs?date=${today}`, parent)
+    assert.equal(parentLogs.status, 200)
+    assert.ok(parentLogs.data.logs.every((l: any) => l.childName.includes('Arta') || l.childName.includes('Luan')))
+
+    // 3. Parent cannot log nap (teacher or director only)
+    const parentCreateFail = await request('sleep-logs', parent, {
+      childId: 'c-arta',
+      logDate: today,
+      startTime: '13:00',
+      quality: 'restful',
+    })
+    assert.equal(parentCreateFail.status, 403)
+
+    // 4. Teacher logs a new active nap session (currently sleeping, end_time is null)
+    const activeNapRes = await request('sleep-logs', teacher, {
+      childId: 'c-arta',
+      logDate: today,
+      startTime: '14:45',
+      quality: 'restful',
+      notes: 'Sleeping with comfort blanket',
+    })
+    assert.equal(activeNapRes.status, 201)
+    const sleepId = activeNapRes.data.log.id
+    assert.equal(activeNapRes.data.log.durationMinutes, null)
+    assert.equal(activeNapRes.data.log.endTime, null)
+
+    // 5. Active nap shows up in summary activeNappingCount
+    const checkActive = await request(`sleep-logs?date=${today}&childId=c-arta`, teacher)
+    assert.equal(checkActive.status, 200)
+    assert.ok(checkActive.data.summary.activeNappingCount >= 1)
+
+    // 6. Teacher wakes up child at 16:00
+    const wakeUpRes = await request(`sleep-logs/${sleepId}`, teacher, {
+      endTime: '16:00',
+      quality: 'restful',
+      notes: 'Woke up happy and refreshed',
+    }, 'PUT')
+    assert.equal(wakeUpRes.status, 200)
+    assert.equal(wakeUpRes.data.log.endTime, '16:00')
+    assert.equal(wakeUpRes.data.log.durationMinutes, 75)
+
+    // 7. Teacher deletes sleep log
+    const delRes = await request(`sleep-logs/${sleepId}`, teacher, undefined, 'DELETE')
+    assert.equal(delRes.status, 200)
+    assert.equal(delRes.data.success, true)
+  } finally {
+    await f.dispose()
+  }
+})

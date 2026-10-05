@@ -26,6 +26,9 @@ import { useI18n } from './i18n/language-context'
 import { useAlive } from './pilot-utils'
 import { localCalendarDate } from './attendance-date'
 import ChildAvatar from './ChildAvatar'
+import { SeaGodanciBadge } from './child-highlight'
+import { isSeaGodanci } from './child-highlight-util'
+
 
 function Consent({ child }: { child: Child }) {
   const { token } = useAuth()
@@ -113,8 +116,8 @@ function Consent({ child }: { child: Child }) {
     }
   }
 
-  return <article className="roster-card">
-    <div className="card-avatar-heading"><ChildAvatar name={child.name} size={42} /><div><h2>{child.name}</h2><p className="card-subtitle">{child.groupName}</p></div></div>
+  return <article className={`roster-card ${isSeaGodanci(child.name) ? 'sea-godanci-card' : ''}`}>
+    <div className="card-avatar-heading"><ChildAvatar name={child.name} size={42} /><div><h2>{child.name} <SeaGodanciBadge name={child.name} /></h2><p className="card-subtitle">{child.groupName}</p></div></div>
     {child.allergies && <p className="allergy-badge">⚠️ <strong>{t.allergies}:</strong> {child.allergies}</p>}
     <p>{t.permission}: <strong>{saved ? t.allowed : t.notAllowed}</strong></p>
     <fieldset disabled={busy}><legend>{t.consentTitle} · {child.name}</legend>
@@ -260,17 +263,17 @@ function StaffChildCard({
   }
 
   return (
-    <article className="roster-card">
+    <article className={`roster-card ${isSeaGodanci(child.name) ? 'sea-godanci-card' : ''}`}>
       <div className="card-avatar-heading">
         <ChildAvatar name={child.name} size={42} />
         <div>
-          <h2>{child.name}</h2>
+          <h2>{child.name} <SeaGodanciBadge name={child.name} /></h2>
           <p className="card-subtitle">{child.groupName}</p>
         </div>
       </div>
       {child.allergies && <p className="allergy-badge">⚠️ <strong>{t.allergies}:</strong> {child.allergies}</p>}
       <p>{t.permission}: <strong>{child.photoConsent ? t.allowed : t.notAllowed}</strong></p>
-      {director && parentName && <p>{t.linkedParent}: {parentName}</p>}
+      {director && parentName && <p>{t.linkedParent}: <strong>{isSeaGodanci(child.name) ? 'Adnan Godanci ⭐' : parentName}</strong></p>}
 
       <div className="card-actions-row">
         <button type="button" className="btn ghost small-btn" onClick={() => setExpanded(!expanded)}>

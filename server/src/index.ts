@@ -3,7 +3,7 @@ import cors from 'cors'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
-import { db, localCalendarDate, type DbUser } from './db.js'
+import { db, localCalendarDate, type DbUser, type DbChildSleepLog } from './db.js'
 import { requireAuth, signToken, type AuthUser } from './auth.js'
 
 export const app = express()
@@ -2356,6 +2356,191 @@ app.delete('/api/documents/:id', requireAuth, (req, res) => {
   res.json({ success: true })
 })
 
+function computeDurationMinutes(start: string, end: string | null | undefined): number | null {
+  if (!end) return null
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  let diff = (eh * 60 + em) - (sh * 60 + sm)
+  if (diff < 0) diff += 24 * 60
+  return diff
+}
+
+const sleepQualitySchema = z.enum(['restful', 'light', 'restless', 'refused_nap'])
+const timeFormatRegex = /^([01]\d|2[0-3]):[0-5]\d$/
+
+const createSleepLogSchema = z.object({
+  childId: z.string().min(1),
+  logDate: calendarDate,
+  startTime: z.string().regex(timeFormatRegex, 'invalid_time_format'),
+  endTime: z.string().regex(timeFormatRegex, 'invalid_time_format').nullable().optional(),
+  quality: sleepQualitySchema,
+  notes: z.string().max(1000).optional().default(''),
+})
+
+const updateSleepLogSchema = z.object({
+  startTime: z.string().regex(timeFormatRegex, 'invalid_time_format').optional(),
+  endTime: z.string().regex(timeFormatRegex, 'invalid_time_format').nullable().optional(),
+  quality: sleepQualitySchema.optional(),
+  notes: z.string().max(1000).optional(),
+})
+
+const sleepSelectFields = `
+  SELECT s.id, s.child_id AS childId, c.name AS childName, c.group_name AS groupName,
+         s.log_date AS logDate, s.start_time AS startTime, s.end_time AS endTime,
+         s.duration_minutes AS durationMinutes, s.quality, s.notes,
+         s.recorded_by AS recordedBy, u.name AS recordedByName,
+         s.created_at AS createdAt, s.updated_at AS updatedAt
+  FROM child_sleep_logs s
+  JOIN children c ON c.id = s.child_id
+  JOIN users u ON u.id = s.recorded_by
+`
+
+app.get('/api/sleep-logs', requireAuth, (req, res) => {
+  const user = authed(req)
+  const { date, childId } = req.query as { date?: string; childId?: string }
+
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: 'invalid_date' })
+  }
+
+  const conditions: string[] = []
+  const params: unknown[] = []
+
+  if (user.role === 'parent') {
+    conditions.push('c.parent_user_id = ?')
+    params.push(user.id)
+  }
+
+  if (childId) {
+    conditions.push('s.child_id = ?')
+    params.push(childId)
+  }
+
+  if (date) {
+    conditions.push('s.log_date = ?')
+    params.push(date)
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+  const sql = `${sleepSelectFields} ${whereClause} ORDER BY s.log_date DESC, s.start_time DESC`
+  const logs = db.prepare(sql).all(...params) as any[]
+
+  let totalSleepMinutes = 0
+  let activeNappingCount = 0
+  let restfulCount = 0
+  let lightCount = 0
+  let restlessCount = 0
+  let refusedCount = 0
+
+  for (const log of logs) {
+    if (log.durationMinutes != null) {
+      totalSleepMinutes += log.durationMinutes
+    }
+    if (log.endTime == null) {
+      activeNappingCount++
+    }
+    if (log.quality === 'restful') restfulCount++
+    else if (log.quality === 'light') lightCount++
+    else if (log.quality === 'restless') restlessCount++
+    else if (log.quality === 'refused_nap') refusedCount++
+  }
+
+  res.json({
+    logs,
+    summary: {
+      totalLogs: logs.length,
+      totalSleepMinutes,
+      activeNappingCount,
+      restfulCount,
+      lightCount,
+      restlessCount,
+      refusedCount,
+    },
+  })
+})
+
+app.post('/api/sleep-logs', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const parsed = createSleepLogSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
+  }
+
+  const child = db.prepare('SELECT id, name FROM children WHERE id = ?').get(parsed.data.childId)
+  if (!child) return res.status(404).json({ error: 'child_not_found' })
+
+  const durationMinutes = computeDurationMinutes(parsed.data.startTime, parsed.data.endTime)
+  const logId = `sl-${randomUUID().slice(0, 8)}`
+  const now = new Date().toISOString()
+
+  db.prepare(`
+    INSERT INTO child_sleep_logs (id, child_id, log_date, start_time, end_time, duration_minutes, quality, notes, recorded_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    logId,
+    parsed.data.childId,
+    parsed.data.logDate,
+    parsed.data.startTime,
+    parsed.data.endTime || null,
+    durationMinutes,
+    parsed.data.quality,
+    parsed.data.notes || '',
+    user.id,
+    now,
+    now,
+  )
+
+  const created = db.prepare(`${sleepSelectFields} WHERE s.id = ?`).get(logId)
+  res.status(201).json({ success: true, log: created })
+})
+
+app.put('/api/sleep-logs/:id', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const existing = db.prepare('SELECT * FROM child_sleep_logs WHERE id = ?').get(req.params.id) as DbChildSleepLog | undefined
+  if (!existing) return res.status(404).json({ error: 'not_found' })
+
+  const parsed = updateSleepLogSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
+  }
+
+  const startTime = parsed.data.startTime !== undefined ? parsed.data.startTime : existing.start_time
+  const endTime = parsed.data.endTime !== undefined ? parsed.data.endTime : existing.end_time
+  const durationMinutes = computeDurationMinutes(startTime, endTime)
+  const quality = parsed.data.quality !== undefined ? parsed.data.quality : existing.quality
+  const notes = parsed.data.notes !== undefined ? parsed.data.notes : existing.notes
+  const now = new Date().toISOString()
+
+  db.prepare(`
+    UPDATE child_sleep_logs
+    SET start_time = ?, end_time = ?, duration_minutes = ?, quality = ?, notes = ?, updated_at = ?
+    WHERE id = ?
+  `).run(startTime, endTime || null, durationMinutes, quality, notes, now, req.params.id)
+
+  const updated = db.prepare(`${sleepSelectFields} WHERE s.id = ?`).get(req.params.id)
+  res.json({ success: true, log: updated })
+})
+
+app.delete('/api/sleep-logs/:id', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const existing = db.prepare('SELECT id FROM child_sleep_logs WHERE id = ?').get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'not_found' })
+
+  db.prepare('DELETE FROM child_sleep_logs WHERE id = ?').run(req.params.id)
+  res.json({ success: true })
+})
 
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const parsed = z.object({ date: calendarDate }).strict().safeParse(req.query)

@@ -985,3 +985,76 @@ export async function deleteDocument(token: string, id: string) {
     method: 'DELETE',
   }, token)
 }
+
+export type SleepQuality = 'restful' | 'light' | 'restless' | 'refused_nap'
+
+export type ChildSleepLog = {
+  id: string
+  childId: string
+  childName: string
+  groupName: string
+  logDate: string
+  startTime: string
+  endTime: string | null
+  durationMinutes: number | null
+  quality: SleepQuality
+  notes: string | null
+  recordedBy: string
+  recordedByName: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type SleepSummaryStats = {
+  totalLogs: number
+  totalSleepMinutes: number
+  activeNappingCount: number
+  restfulCount: number
+  lightCount: number
+  restlessCount: number
+  refusedCount: number
+}
+
+export type CreateSleepLogInput = {
+  childId: string
+  logDate: string
+  startTime: string
+  endTime?: string | null
+  quality: SleepQuality
+  notes?: string
+}
+
+export type UpdateSleepLogInput = {
+  startTime?: string
+  endTime?: string | null
+  quality?: SleepQuality
+  notes?: string
+}
+
+export async function listSleepLogs(token: string, options?: { date?: string; childId?: string }, signal?: AbortSignal) {
+  const query = new URLSearchParams()
+  if (options?.date) query.set('date', options.date)
+  if (options?.childId) query.set('childId', options.childId)
+  const qs = query.toString() ? `?${query}` : ''
+  return api<{ logs: ChildSleepLog[]; summary: SleepSummaryStats }>(`/api/sleep-logs${qs}`, { signal }, token)
+}
+
+export async function createSleepLog(token: string, input: CreateSleepLogInput) {
+  return api<{ success: boolean; log: ChildSleepLog }>('/api/sleep-logs', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function updateSleepLog(token: string, id: string, input: UpdateSleepLogInput) {
+  return api<{ success: boolean; log: ChildSleepLog }>(`/api/sleep-logs/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function deleteSleepLog(token: string, id: string) {
+  return api<{ success: boolean }>(`/api/sleep-logs/${id}`, {
+    method: 'DELETE',
+  }, token)
+}

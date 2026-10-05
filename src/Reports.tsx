@@ -7,6 +7,9 @@ import { useI18n } from './i18n/language-context'
 import { localCalendarDate, validDate } from './attendance-date.js'
 import { displayDate, useAlive } from './pilot-utils'
 import ChildAvatar from './ChildAvatar'
+import { SeaGodanciBadge } from './child-highlight'
+import { isSeaGodanci } from './child-highlight-util'
+
 import Icon from './Icon'
 
 const options = {
@@ -140,7 +143,7 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
 
   }
   return <section className="panel reports-panel"><h1>{t.reportsTitle}</h1><p className="panel-sub">{t.reportsDescription}</p>
-    <div className="filters"><label>{t.paymentsChild}<select disabled={busy || !rosterReady} value={childId} onChange={(e) => changeContext(e.target.value, date)}>{children.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.groupName}</option>)}</select></label>
+    <div className="filters"><label>{t.paymentsChild}<select disabled={busy || !rosterReady} value={childId} onChange={(e) => changeContext(e.target.value, date)}>{children.map((c) => <option key={c.id} value={c.id}>{isSeaGodanci(c.name) ? '⭐ ' : ''}{c.name} · {c.groupName}</option>)}</select></label>
     <label>{t.attendanceDate}<input type="date" disabled={busy} value={date} onChange={(e) => changeContext(childId, e.target.value)} /></label><button className="btn ghost" disabled={busy} onClick={() => { if (date !== localCalendarDate()) changeContext(childId, localCalendarDate()) }}>{t.attendanceToday}</button></div>
     {selectedChild?.allergies && <div className="allergy-alert" role="status">⚠️ <strong>{t.allergies}:</strong> {selectedChild.allergies}</div>}
     {!validDate(date) && <p role="alert">{t.attendanceInvalidDate}</p>}
@@ -172,8 +175,8 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
       </fieldset>
     </form>}
     {!loading && !rosterError && error !== 'load' && validDate(date) && reports.length === 0 && <p>{t.reportEmpty}</p>}
-    {!loading && reports.map((report) => <article className="roster-card report-story-card" key={report.id}>
-      <div className="card-avatar-heading"><ChildAvatar name={report.childName} size={52} /><div><h2>{report.childName}</h2><p className="card-subtitle">{displayDate(report.reportDate, lang)} · {report.groupName}</p></div><span className="report-day-mark" aria-hidden="true"><Icon name="sun" size={24} /></span></div>
+    {!loading && reports.map((report) => <article className={`roster-card report-story-card ${isSeaGodanci(report.childName) ? 'sea-godanci-card' : ''}`} key={report.id}>
+      <div className="card-avatar-heading"><ChildAvatar name={report.childName} size={52} /><div><h2>{report.childName} <SeaGodanciBadge name={report.childName} /></h2><p className="card-subtitle">{displayDate(report.reportDate, lang)} · {report.groupName}</p></div><span className="report-day-mark" aria-hidden="true"><Icon name="sun" size={24} /></span></div>
       {report.allergies && <p className="allergy-badge">⚠️ <strong>{t.allergies}:</strong> {report.allergies}</p>}
       <div className="report-story">
         {(['mood', 'meals', 'nap', 'activities'] as const).map((field) => <div className={`report-story-entry story-${field}`} key={field}>

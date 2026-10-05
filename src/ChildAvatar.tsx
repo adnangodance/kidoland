@@ -1,3 +1,6 @@
+import { isSeaGodanci } from './child-highlight-util'
+
+
 function getChildInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   if (!parts.length) return '?'
@@ -26,11 +29,12 @@ function getAvatarColor(name: string) {
 }
 
 export default function ChildAvatar({ name, size = 36 }: { name: string; size?: number }) {
+  const isSea = isSeaGodanci(name)
   const initials = getChildInitials(name)
-  const palette = getAvatarColor(name)
+  const palette = isSea ? { bg: '#fef3c7', color: '#92400e', border: '#f59e0b' } : getAvatarColor(name)
   return (
     <span
-      className="child-avatar"
+      className={`child-avatar ${isSea ? 'sea-godanci-avatar' : ''}`}
       aria-hidden="true"
       style={{
         width: `${size}px`,
@@ -38,7 +42,7 @@ export default function ChildAvatar({ name, size = 36 }: { name: string; size?: 
         minWidth: `${size}px`,
         backgroundColor: palette.bg,
         color: palette.color,
-        border: `1px solid ${palette.border}`,
+        border: `2px solid ${palette.border}`,
       }}
     >
       {initials}
