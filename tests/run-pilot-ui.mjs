@@ -11,7 +11,7 @@ let chrome
 for (const candidate of candidates) { try { await access(candidate); chrome = candidate; break } catch { /* Try next browser. */ } }
 if (!chrome) throw new Error('Installed Chrome not found. Set CHROME_PATH.')
 const directory = await mkdtemp(path.join(tmpdir(), 'kidoland-pilot-ui-'))
-let api, browser, vite
+let api, browser, vite, capturePage
 try {
   api = fork(fileURLToPath(new URL('../server/tests/api-process.ts', import.meta.url)), [], { cwd: fileURLToPath(new URL('../server', import.meta.url)), execArgv: ['--import', 'tsx'], env: { ...process.env, KIDOLAND_DB_PATH: path.join(directory, 'test.sqlite') }, stdio: ['ignore', 'ignore', 'inherit', 'ipc'] })
   const port = await new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Isolated API startup timeout')), 15000); api.once('message', (message) => { clearTimeout(timer); resolve(message.port) }); api.once('error', reject); api.once('exit', (code) => { clearTimeout(timer); reject(new Error(`API exited ${code}`)) }) })
@@ -22,7 +22,14 @@ try {
   process.env.VITE_API_URL = `http://127.0.0.1:${port}`
   let report
   const done = new Promise((resolve, reject) => { report = (result) => result.ok ? resolve(result) : reject(new Error(result.output)) })
-  vite = await createServer({ server: { host: '127.0.0.1', port: 0, open: false }, logLevel: 'error', plugins: [{ name: 'pilot-test-results', configureServer(server) { server.middlewares.use('/__pilot_results', (req, res) => { let body = ''; req.on('data', (data) => { body += data }); req.on('end', () => { report(JSON.parse(body)); res.end('ok') }) }) } }] })
+  vite = await createServer({ server: { host: '127.0.0.1', port: 0, open: false }, logLevel: 'error', plugins: [{ name: 'pilot-test-results', configureServer(server) {
+    server.middlewares.use('/__pilot_results', (req, res) => { let body = ''; req.on('data', (data) => { body += data }); req.on('end', () => { report(JSON.parse(body)); res.end('ok') }) })
+    server.middlewares.use('/__pilot_capture', async (req, res) => {
+      const label = new URL(req.url, 'http://localhost').searchParams.get('screen')
+      if (!label || !/^[a-z-]+$/.test(label) || !capturePage) { res.statusCode = 400; res.end(); return }
+      try { await capturePage(label); res.end('ok') } catch { res.statusCode = 500; res.end('Capture failed') }
+    })
+  } }] })
   await vite.listen()
   const address = vite.httpServer.address()
   const width = process.env.PILOT_WIDTH || '320'
@@ -39,6 +46,10 @@ try {
   const pending = new Map()
   socket.onmessage = (event) => { const message = JSON.parse(event.data); if (message.id) { pending.get(message.id)?.(message); pending.delete(message.id) } }
   const command = (method, params) => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, (message) => message.error ? reject(new Error(message.error.message)) : resolve(message.result)); socket.send(JSON.stringify({ id, method, params })) })
+  capturePage = async (label) => {
+    const capture = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true })
+    await writeFile(path.join('/tmp', `kidoland-${label}-${width}.png`), Buffer.from(capture.data, 'base64'))
+  }
   await command('Emulation.setDeviceMetricsOverride', { width: Number(width), height: 1000, deviceScaleFactor: 1, mobile: false })
   await command('Page.navigate', { url: `http://127.0.0.1:${address.port}/tests/pilot-ui.html?width=${width}` })
   let timer

@@ -50,16 +50,31 @@ root.render(<App />)
 function assert(condition: unknown, label: string) { if (!condition) throw new Error(label); results.push(`PASS: ${label}`); output.textContent = results.join('\n') }
 async function until(check: () => unknown, label = 'UI state') { const deadline = Date.now() + 7000; while (!check()) { if (Date.now() > deadline) throw new Error(`Timed out: ${label}; ${document.querySelector('main')?.textContent}`); await new Promise((resolve) => setTimeout(resolve, 10)) } }
 const main = () => document.querySelector('main') || document.getElementById('root')!
+async function capture(screen: string) {
+  output.style.display = 'none'
+  await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  const response = await originalFetch(`/__pilot_capture?screen=${screen}`)
+  if (!response.ok) throw new Error(`Screenshot failed: ${screen}`)
+  output.style.display = ''
+}
 function button(text: string, scope: ParentNode = document) { const found = [...scope.querySelectorAll<HTMLButtonElement>('button')].find((element) => element.textContent?.trim() === text || element.getAttribute('aria-label') === text); if (!found) throw new Error(`Button missing: ${text}`); found.click() }
 function fill(element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, value: string) { const proto = element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(element, value); element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true })) }
 function field(label: string, scope: ParentNode = main()) { const found = [...scope.querySelectorAll('label')].find((element) => element.childNodes[0]?.textContent?.trim() === label)?.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input,select,textarea'); if (!found) throw new Error(`Field missing: ${label}`); return found }
 async function set(label: string, value: string, scope?: ParentNode) { fill(field(label, scope), value); await new Promise((resolve) => setTimeout(resolve, 10)) }
-async function nav(text: string) {
+async function openSidebar() {
   const toggle = document.querySelector<HTMLButtonElement>('.menu-toggle')
   if (toggle && toggle.getBoundingClientRect().height > 0 && toggle.getAttribute('aria-expanded') !== 'true') {
     toggle.click(); await until(() => toggle.getAttribute('aria-expanded') === 'true')
+    await new Promise((resolve) => setTimeout(resolve, 350))
   }
-  button(text, document.querySelector('nav')!)
+}
+async function nav(text: string) {
+  await openSidebar()
+  const toggle = document.querySelector<HTMLButtonElement>('.menu-toggle')
+  const destination = [...document.querySelectorAll<HTMLButtonElement>('.sidebar nav button[data-view]')].find((element) => element.title === text)
+  if (!destination) throw new Error(`Navigation missing: ${text}`)
+  if (destination.closest('[hidden]')) document.querySelector<HTMLButtonElement>('.kimi-more')!.click()
+  destination.click()
   await until(() => main().querySelector('h1'))
   await new Promise((resolve) => setTimeout(resolve, 50))
   if (toggle && toggle.getBoundingClientRect().height > 0) assert(toggle.getAttribute('aria-expanded') === 'false', 'mobile navigation closes after choosing a destination')
@@ -79,17 +94,94 @@ async function login(role: string, email = `${role}@kidoland.demo`, password = `
   assert(main().textContent?.includes(role === 'director' ? translations.en.dashDirector : role === 'teacher' ? translations.en.dashTeacher : translations.en.dashParent), `${role} login opens authorized dashboard`)
 }
 async function logout() { button(translations.en.logout); await until(() => !document.querySelector('nav [aria-current]')); assert(!main().querySelector('.roster-card, .attendance-row, .metrics'), 'logout removes account records immediately') }
-function fit(label: string) { const navigation = document.querySelector<HTMLElement>('.sidebar .nav-links'); if (navigation?.getBoundingClientRect().width) assert(navigation.scrollWidth <= navigation.clientWidth + 1, `${label}: navigation stays in a single sidebar column`); assert(document.documentElement.scrollWidth <= window.innerWidth && [...document.querySelectorAll<HTMLElement>('nav button,input,select,textarea')].every((element) => { const box = element.getBoundingClientRect(); return box.width === 0 || box.right <= window.innerWidth + 1 && box.left >= -1 }), `${label}: navigation and controls fit ${window.innerWidth}px`); assert([...document.querySelectorAll<HTMLElement>('nav button')].every((element) => element.getBoundingClientRect().height === 0 || element.getBoundingClientRect().height >= 40) && (!document.querySelector('.workspace') || [...document.querySelectorAll<HTMLElement>('.menu-toggle, nav button')].some((element) => element.getBoundingClientRect().height >= 40)), `${label}: navigation remains reachable through labeled links or menu`) }
+function fit(label: string) {
+  const visible = (element: HTMLElement) => !element.closest('[inert]') && element.getBoundingClientRect().width > 0
+  const navigation = document.querySelector<HTMLElement>('.sidebar .nav-links')
+  if (navigation && visible(navigation)) assert(navigation.scrollWidth <= navigation.clientWidth + 1, `${label}: navigation stays in a single sidebar column`)
+  assert(document.documentElement.scrollWidth <= window.innerWidth && [...document.querySelectorAll<HTMLElement>('nav button,input,select,textarea')].filter(visible).every((element) => { const box = element.getBoundingClientRect(); return box.right <= window.innerWidth + 1 && box.left >= -1 }), `${label}: navigation and controls fit ${window.innerWidth}px`)
+  assert([...document.querySelectorAll<HTMLElement>('nav button')].filter(visible).every((element) => element.getBoundingClientRect().height >= 40) && (!document.querySelector('.workspace') || [...document.querySelectorAll<HTMLElement>('.menu-toggle, nav button')].filter(visible).some((element) => element.getBoundingClientRect().height >= 40)), `${label}: navigation remains reachable through labeled links or menu`)
+}
+
 async function run() {
   if (!resumed) {
   await until(() => document.querySelector('.hero'))
+  fit('public introduction'); await capture('home')
   await login('director'); fit('director dashboard')
+  await new Promise((resolve) => setTimeout(resolve, 350))
+  const dashboardBox = main().getBoundingClientRect(), canvasBox = document.querySelector('.workspace-frame')!.getBoundingClientRect()
+  assert(dashboardBox.left >= canvasBox.left, `dashboard stays inside the framed canvas (${dashboardBox.left}, ${canvasBox.left})`)
+  await capture('director-dashboard')
+  const finderTrigger = [...document.querySelectorAll<HTMLButtonElement>('.sidebar-search,.header-search')].find((element) => !element.closest('[inert]') && element.getBoundingClientRect().height > 0)!
+  finderTrigger.focus(); finderTrigger.click(); await until(() => document.querySelector('dialog[open]'))
+  const finder = document.querySelector<HTMLDialogElement>('.page-finder')!
+  const finderInput = finder.querySelector<HTMLInputElement>('input')!
+  assert(document.activeElement === finderInput, 'page finder focuses its search and opens as a modal')
+  fill(finderInput, 'no-such-page'); await until(() => finder.textContent?.includes(translations.en.noPagesFound))
+  assert(finder.querySelectorAll('.finder-result').length === 0, 'page finder has an explicit empty search state')
+  finder.dispatchEvent(new Event('cancel', { cancelable: true })); await until(() => !document.querySelector('dialog[open]'))
+  assert(document.activeElement === finderTrigger, 'dismissing page finder restores the initiating control')
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true })); await until(() => document.querySelector('dialog[open]'))
+  const keyboardInput = document.querySelector<HTMLInputElement>('.page-finder input')!
+  keyboardInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })); await until(() => document.querySelector('.finder-result.is-highlighted')?.textContent?.includes(translations.en.attendanceTitle))
+  await capture('page-finder'); fit('page finder')
+  keyboardInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await until(() => main().querySelector('.attendance-roster'))
+  assert(!document.querySelector('dialog[open]') && document.activeElement === main().querySelector('h1'), 'keyboard page search navigates and focuses the destination heading')
+  await nav(translations.en.navDashboard); await until(() => main().querySelector('.metrics'))
   const mobileMenu = document.querySelector<HTMLButtonElement>('.menu-toggle')!
   if (mobileMenu.getBoundingClientRect().height > 0) {
-    mobileMenu.click(); await until(() => mobileMenu.getAttribute('aria-expanded') === 'true'); fit('expanded mobile navigation')
+    mobileMenu.click(); await until(() => mobileMenu.getAttribute('aria-expanded') === 'true'); await new Promise((resolve) => setTimeout(resolve, 350)); fit('expanded mobile navigation'); await capture('sidebar-open')
+    const sidebarSearch = document.querySelector<HTMLButtonElement>('.sidebar-search')!
+    sidebarSearch.focus(); sidebarSearch.click(); await until(() => document.querySelector('dialog[open]'))
+    assert(document.activeElement === document.querySelector('.page-finder input'), 'sidebar search opens page search above the inert mobile canvas')
+    document.querySelector('.page-finder')!.dispatchEvent(new Event('cancel', { cancelable: true })); await until(() => !document.querySelector('dialog[open]'))
+    assert(document.activeElement === sidebarSearch, 'dismissing sidebar search returns focus to the sidebar search button')
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); await until(() => mobileMenu.getAttribute('aria-expanded') === 'false')
     assert(document.activeElement === mobileMenu, 'Escape closes mobile navigation and returns keyboard focus')
+  } else {
+    const collapse = document.querySelector<HTMLButtonElement>('.sidebar-collapse')!
+    assert(document.querySelector('.sidebar')!.getBoundingClientRect().width === 240, 'Kimi sidebar uses the reference 240px width')
+    collapse.click(); await until(() => document.querySelector('.sidebar')!.hasAttribute('inert'))
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    const frame = document.querySelector('.workspace-frame')!
+    const collapsedLeft = frame.getBoundingClientRect().left
+    mobileMenu.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' })); await until(() => document.querySelector('.sidebar.is-floating.is-open'))
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    assert(frame.getBoundingClientRect().left === collapsedLeft, 'collapsed sidebar hover preview leaves the canvas in place')
+    await capture('sidebar-hover')
+    document.querySelector('.sidebar')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await until(() => document.querySelector('.sidebar')!.hasAttribute('inert'))
+    mobileMenu.click(); await until(() => !document.querySelector('.sidebar')!.classList.contains('is-floating'))
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    assert(frame.getBoundingClientRect().left === 240, 'clicking expand pins the sidebar beside the canvas')
   }
+  const expectedPages = new Map([
+    ['dashboard', translations.en.navDashboard], ['attendance', translations.en.attendanceTitle],
+    ['reports', translations.en.navReports], ['program', translations.en.navProgram],
+    ['meals', translations.en.navMeals], ['messages', translations.en.navMessages],
+    ['announcements', translations.en.navAnnouncements], ['moments', translations.en.navMoments],
+    ['events', translations.en.navEvents], ['children', translations.en.childrenTitle],
+    ['payments', translations.en.navPayments], ['absences', translations.en.navAbsences],
+    ['incidents', translations.en.navIncidents], ['milestones', translations.en.navMilestones],
+    ['staff', translations.en.navStaffShifts],
+  ])
+  const sidebarPages = [...document.querySelectorAll<HTMLButtonElement>('.sidebar button[data-view]')]
+  assert(sidebarPages.length === expectedPages.size && sidebarPages.every((element) => element.querySelector('span:last-child')?.textContent === expectedPages.get(element.dataset.view!)), 'sidebar identifies all working Kidoland destinations with their own labels')
+  assert(new Set(sidebarPages.map((element) => element.dataset.view)).size === expectedPages.size && sidebarPages.slice(0, 5).map((element) => element.dataset.view).join('|') === 'dashboard|attendance|reports|program|meals' && sidebarPages.at(-1)?.dataset.view === 'children', 'sidebar has unique destinations, daily care first, and the child directory in the bottom section')
+  assert(document.querySelector('.sidebar-search')!.textContent?.includes(translations.en.searchPages) && !/My Kimi|New chat|New project|Projects|Chats/.test(document.querySelector('.sidebar')!.textContent!), 'sidebar search describes its action and has no copied product names')
+  assert(document.querySelectorAll('.sidebar button[data-view] .kimi-icon svg').length === 15, 'each Kidoland destination keeps the reference SVG icon treatment')
+  await openSidebar()
+  const morePages = document.querySelector<HTMLButtonElement>('.kimi-more')!
+  const moreSection = document.getElementById(morePages.getAttribute('aria-controls')!)!
+  morePages.click(); await until(() => morePages.getAttribute('aria-expanded') === 'false')
+  assert(moreSection.hidden && morePages.querySelector('span:last-child')?.textContent === translations.en.sidebarMore && [...moreSection.querySelectorAll('button')].every((element) => element.getBoundingClientRect().height === 0), 'More hides secondary destinations from layout and keyboard order with matching expanded state')
+  morePages.click(); await until(() => morePages.getAttribute('aria-expanded') === 'true')
+  assert(!moreSection.hidden && morePages.querySelector('span:last-child')?.textContent === translations.en.sidebarLess, 'Collapse expands all secondary destinations again')
+  morePages.click(); await until(() => moreSection.hidden)
+  document.querySelector<HTMLButtonElement>('.sidebar-search')!.click(); await until(() => document.querySelector('dialog[open]'))
+  fill(document.querySelector<HTMLInputElement>('.page-finder input')!, translations.en.navPayments)
+  await until(() => document.querySelectorAll('.finder-result').length === 1)
+  document.querySelector<HTMLButtonElement>('.finder-result')!.click(); await until(() => document.querySelector('.sidebar [data-view=payments]')?.getAttribute('aria-current') === 'page')
+  assert(!document.querySelector('.sidebar [data-view=payments]')!.closest('[hidden]') && morePages.getAttribute('aria-expanded') === 'true', 'page search reveals the selected secondary destination after More was collapsed')
   await nav(translations.en.childrenTitle)
   await until(() => main().querySelector('.roster-card'))
   button(translations.en.newParent, main())
@@ -167,6 +259,22 @@ async function run() {
   button(`SQ · ${translations.en.langToggle}`)
   await until(() => document.documentElement.lang === 'sq')
   assert(field(translations.sq.reportsNote).value === 'Corrected browser note' && field(translations.sq.reportsMood).value === 'mood:calm', 'language switch translates controls and preserves report draft')
+  const sqKeys = new Map([
+    ['dashboard', 'navDashboard'], ['attendance', 'attendanceTitle'], ['reports', 'navReports'],
+    ['program', 'navProgram'], ['meals', 'navMeals'], ['messages', 'navMessages'],
+    ['announcements', 'navAnnouncements'], ['moments', 'navMoments'], ['events', 'navEvents'],
+    ['children', 'childrenTitle'], ['payments', 'navPayments'], ['absences', 'navAbsences'],
+    ['incidents', 'navIncidents'], ['milestones', 'navMilestones'], ['staff', 'navStaffShifts'],
+  ] as const)
+  await openSidebar()
+  assert([...document.querySelectorAll<HTMLButtonElement>('.sidebar button[data-view]')].every((element) => element.querySelector('span:last-child')?.textContent === translations.sq[sqKeys.get(element.dataset.view!)!]) && document.querySelector('.nav-group-label')?.textContent === translations.sq.navManagement && document.querySelector('.sidebar-search > span:not(.kimi-icon)')?.textContent === translations.sq.searchPages, 'all sidebar pages, the management heading, and search action use Albanian labels')
+  const sqMore = document.querySelector<HTMLButtonElement>('.kimi-more')!
+  sqMore.click(); await until(() => sqMore.getAttribute('aria-expanded') === 'false')
+  assert(sqMore.querySelector('span:last-child')?.textContent === translations.sq.sidebarMore, 'collapsed Albanian navigation shows Më shumë')
+  sqMore.click(); await until(() => sqMore.getAttribute('aria-expanded') === 'true')
+  assert(sqMore.querySelector('span:last-child')?.textContent === translations.sq.sidebarLess, 'expanded Albanian navigation shows Më pak')
+  fit('Albanian sidebar'); await capture('sidebar-albanian')
+  if (document.querySelector<HTMLButtonElement>('.menu-toggle')!.getBoundingClientRect().height > 0) { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); await until(() => document.querySelector('.sidebar')!.hasAttribute('inert')) }
   fit('Albanian report'); button(`EN · ${translations.sq.langToggle}`); await until(() => document.documentElement.lang === 'en')
   const teacherToken = localStorage.getItem('kidoland.token')!
   const legacyValues = { mood: 'Unfamiliar mood text', meals: 'Legacy meals 17', nap: 'Legacy nap 23', activities: 'Legacy free-form activities' }
@@ -207,6 +315,7 @@ async function run() {
   assert([...main().querySelectorAll('.roster-card')].filter((card) => card.textContent?.includes('Browser October')).length === 1, 'durable retry and repeated unchanged submission show one invoice')
   assert(!main().textContent?.includes(translations.en.paymentsMarkPaid), 'teacher cannot mark invoice paid')
   await logout(); await login('parent', 'browser@example.test', 'browser-password')
+  assert(document.querySelector('.sidebar [data-view=children] > span:last-child')?.textContent === translations.en.consentTitle, 'parent sidebar names the child destination Photo consent')
   assert(main().querySelectorAll('.roster-card').length === 1 && main().textContent?.includes('Browser Child'), 'new family dashboard contains only linked child')
   await nav(translations.en.attendanceTitle); await until(() => main().querySelector('.attendance-row'))
   assert(main().querySelectorAll('.attendance-row').length === 1 && !main().querySelector('.attendance-controls') && main().textContent?.includes(translations.en.attendancePresent), 'parent reads persisted linked attendance without write controls'); fit('parent attendance')

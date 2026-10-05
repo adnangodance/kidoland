@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { AuthProvider } from './auth'
 import { useAuth } from './auth-context'
 import { LanguageProvider } from './i18n/LanguageContext'
@@ -19,8 +19,12 @@ import { Events } from './Events'
 import { StaffShifts } from './StaffShifts'
 import { Milestones } from './Milestones'
 import Icon, { BrandMark, type IconName } from './Icon'
+import KimiIcon from './KimiIcon'
+import KimiNavigation from './KimiNavigation'
+import PageFinder from './PageFinder'
 import './App.css'
 import './theme.css'
+import './Sidebar.css'
 
 type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones'
 
@@ -35,9 +39,16 @@ function Shell() {
   const { user, token, loading, logout, expired, bootError, retryBoot } = useAuth()
   const [view, setView] = useState<View>('home')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 1280px)').matches)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => { try { return localStorage.getItem('kidoland.sidebar-collapsed') === 'true' } catch { return false } })
+  const [sidebarPeeking, setSidebarPeeking] = useState(false)
+  const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const previouslyOpen = useRef(false)
+  const [searchOwner, setSearchOwner] = useState<string | null>(null)
   const menuButton = useRef<HTMLButtonElement>(null)
   const [reportContext, setReportContext] = useState<{ childId?: string; date?: string }>({})
   const activeView = user && (view === 'home' || view === 'login') ? 'dashboard' : view
+  const sidebarVisible = narrow ? menuOpen : !sidebarCollapsed || sidebarPeeking
   const roleLabel = user?.role === 'parent' ? t.roleParent : user?.role === 'teacher' ? t.roleTeacher : t.roleDirector
   const navGroups: { label: string; items: { view: View; label: string; icon: IconName }[] }[] = [
     { label: t.navDaily, items: [
@@ -65,37 +76,74 @@ function Shell() {
   const currentLabel = navGroups.flatMap((group) => group.items).find((item) => item.view === activeView)?.label
 
   useEffect(() => { document.documentElement.lang = lang }, [lang])
-  useEffect(() => { const heading = document.querySelector<HTMLElement>('main h1'); if (heading) { heading.tabIndex = -1; heading.focus() } }, [activeView, user?.id, loading])
+  useEffect(() => {
+    if (!user) return
+    const search = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setSearchOwner((owner) => owner === user.id ? null : user.id) } }
+    window.addEventListener('keydown', search)
+    return () => window.removeEventListener('keydown', search)
+  }, [user])
+  useEffect(() => { const heading = document.querySelector<HTMLElement>('main h1'); if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); document.querySelector('.workspace-frame')?.scrollTo({ top: 0, left: 0, behavior: 'instant' }); window.scrollTo({ top: 0, left: 0, behavior: 'instant' }) } }, [activeView, user?.id, loading])
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 1280px)')
+    const resize = () => { setNarrow(query.matches); setMenuOpen(false); setSidebarPeeking(false) }
+    query.addEventListener('change', resize)
+    return () => query.removeEventListener('change', resize)
+  }, [])
+  useEffect(() => { try { localStorage.setItem('kidoland.sidebar-collapsed', String(sidebarCollapsed)) } catch { /* Navigation works without storage. */ } }, [sidebarCollapsed])
+  useEffect(() => () => { if (peekTimer.current) clearTimeout(peekTimer.current) }, [])
+  useLayoutEffect(() => {
+    if ((previouslyOpen.current && !menuOpen) || (!sidebarVisible && document.activeElement?.closest('.sidebar'))) menuButton.current?.focus({ preventScroll: true })
+    previouslyOpen.current = menuOpen
+  }, [menuOpen, sidebarVisible])
   useEffect(() => {
     if (!menuOpen) return
-    document.querySelector<HTMLButtonElement>('.sidebar [aria-current="page"]')?.focus({ preventScroll: true })
-    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMenuOpen(false); menuButton.current?.focus() } }
+    const current = document.querySelector<HTMLButtonElement>('.sidebar [aria-current="page"]')
+    const target = current && !current.closest('[hidden]') ? current : document.querySelector<HTMLButtonElement>('.sidebar-search')
+    target?.focus({ preventScroll: true })
+    const close = (event: KeyboardEvent) => {
+      if (document.querySelector('.page-finder[open]')) return
+      if (event.key === 'Escape') { setMenuOpen(false); return }
+      if (event.key === 'Tab') {
+        const buttons = [...document.querySelectorAll<HTMLButtonElement>('.sidebar button:not(:disabled)')]
+        const first = buttons[0], last = buttons.at(-1)
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+        if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+      }
+    }
     window.addEventListener('keydown', close)
     return () => window.removeEventListener('keydown', close)
   }, [menuOpen])
 
   if (loading) return <div className="loading" role="status"><BrandMark /><span>{t.loading}</span></div>
-  const go = (v: View, context?: { childId?: string; date?: string }) => { setReportContext(context || {}); setView(v); setMenuOpen(false); if (menuOpen) menuButton.current?.focus() }
+  const go = (v: View, context?: { childId?: string; date?: string }) => { setReportContext(context || {}); setView(v); setMenuOpen(false); setSidebarPeeking(false) }
+  const keepPeek = () => { if (peekTimer.current) clearTimeout(peekTimer.current) }
+  const peek = () => { keepPeek(); if (!narrow && sidebarCollapsed) setSidebarPeeking(true) }
+  const leavePeek = () => { keepPeek(); peekTimer.current = setTimeout(() => setSidebarPeeking(false), 150) }
+  const toggleSidebar = () => { keepPeek(); setSidebarPeeking(false); if (narrow) setMenuOpen((open) => !open); else setSidebarCollapsed((collapsed) => !collapsed) }
   const brand = <button type="button" className="brand" onClick={() => go(user ? 'dashboard' : 'home')}><span className="brand-mark"><BrandMark /></span>{t.brand}<span className="brand-dot" aria-hidden="true">.</span></button>
 
   return (
-    <div className={`app ${user ? 'workspace' : 'public-app'}`}>
+    <div className={`app ${user ? `workspace ${narrow || sidebarCollapsed ? 'sidebar-collapsed' : ''}` : 'public-app'}`}>
       <a className="skip-link" href="#main-content">{t.skipContent}</a>
-      {user && <aside className={`sidebar ${menuOpen ? 'is-open' : ''}`} id="workspace-navigation">
-        <div className="sidebar-brand">{brand}<span className="brand-caption">{t.brandCaption}</span></div>
-        <nav className="nav-links" aria-label={t.navigation}>
-          {navGroups.map((group) => <div className="nav-group" key={group.label}><p className="nav-group-label">{group.label}</p>{group.items.map((item) => <button type="button" key={item.view} data-view={item.view} aria-current={activeView === item.view ? 'page' : undefined} onClick={() => go(item.view)}><Icon name={item.icon} /><span>{item.label}</span>{activeView === item.view && <span className="active-dot" aria-hidden="true" />}</button>)}</div>)}
-        </nav>
-        <div className="sidebar-note"><Icon name="leaf" /><div><strong>{t.careTogether}</strong><p>{t.sidebarNote}</p></div></div>
+      {user && narrow && menuOpen && <button type="button" className="sidebar-scrim" tabIndex={-1} aria-label={t.closeMenu} onClick={() => setMenuOpen(false)} />}
+      {user && <aside className={`sidebar ${sidebarVisible ? 'is-open' : ''} ${!narrow && sidebarCollapsed ? 'is-floating' : ''}`} id="workspace-navigation" inert={!sidebarVisible} role={narrow && menuOpen ? 'dialog' : undefined} aria-modal={narrow && menuOpen ? true : undefined} aria-label={narrow && menuOpen ? t.navigation : undefined} onPointerEnter={keepPeek} onPointerLeave={leavePeek} onKeyDown={(event) => { if (!narrow && sidebarCollapsed && event.key === 'Escape') { setSidebarPeeking(false); menuButton.current?.focus() } }}>
+        <div className="sidebar-brand">{brand}<button type="button" className="sidebar-collapse" aria-label={narrow ? t.closeMenu : t.collapseSidebar} title={narrow ? t.closeMenu : t.collapseSidebar} onClick={toggleSidebar}><KimiIcon name="sidebar" /></button></div>
+        <button type="button" className="sidebar-search" title={t.searchPages} aria-label={t.searchPages} onClick={() => setSearchOwner(user.id)}><KimiIcon name="newChat" /><span>{t.searchPages}</span><kbd aria-hidden="true"><span>⌘</span><span>K</span></kbd></button>
+        <KimiNavigation pages={navGroups.flatMap((group) => group.items)} activeView={activeView} onChoose={(destination) => go(destination as View)} label={t.navigation} />
+        <div className="sidebar-account"><span className="user-avatar" aria-hidden="true">{user.name.trim().slice(0, 1)}</span><div><strong>{user.name}</strong><span>{roleLabel}</span></div><button type="button" className="sidebar-logout" aria-label={t.logout} title={t.logout} onClick={() => { logout(); go('home') }}><Icon name="logout" size={18} /></button></div>
       </aside>}
+      <div className={user ? 'workspace-frame' : 'public-frame'} inert={Boolean(user && narrow && menuOpen)}>
       <header className="nav">
-        {user ? <><button ref={menuButton} type="button" className="menu-toggle" aria-label={menuOpen ? t.closeMenu : t.openMenu} aria-expanded={menuOpen} aria-controls="workspace-navigation" onClick={() => setMenuOpen((open) => !open)}><Icon name={menuOpen ? 'close' : 'menu'} /></button><div className="workspace-location"><span>{t.brand}</span><span aria-hidden="true">/</span><strong>{currentLabel}</strong></div></> : brand}
+        {user ? <><button ref={menuButton} type="button" className="menu-toggle" aria-label={narrow ? menuOpen ? t.closeMenu : t.openMenu : t.expandSidebar} title={narrow ? t.openMenu : t.expandSidebar} aria-expanded={sidebarVisible} aria-controls="workspace-navigation" onPointerEnter={(event) => { if (event.pointerType === 'mouse') peek() }} onPointerLeave={leavePeek} onClick={toggleSidebar}><KimiIcon name="sidebar" /></button><div className="workspace-location"><span>{t.brand}</span><span aria-hidden="true">/</span><strong>{currentLabel}</strong></div></> : brand}
         {!user && <nav className="public-nav" aria-label={t.navigation}><button type="button" onClick={() => go('home')}>{t.navFeatures}</button></nav>}
         <div className="nav-actions">
+          {user && <button type="button" className="header-search" aria-label={t.searchPages} onClick={() => setSearchOwner(user.id)}><Icon name="search" size={18} /></button>}
           <button type="button" className="lang-btn" onClick={toggle}>{lang === 'en' ? 'SQ' : 'EN'} · {t.langToggle}</button>
           {user ? <><div className="user-identity"><span className="user-avatar" aria-hidden="true">{user.name.trim().slice(0, 1)}</span><div><strong>{user.name}</strong><span>{roleLabel}</span></div></div><button type="button" className="btn ghost logout-btn" onClick={() => { logout(); go('home') }}><Icon name="logout" /><span>{t.logout}</span></button></> : <button type="button" className="btn primary" onClick={() => go('login')}>{t.ctaStart}<Icon name="arrow" size={17} /></button>}
         </div>
       </header>
+
+      {user && searchOwner === user.id && <PageFinder key={user.id} pages={navGroups.flatMap((group) => group.items.map((item) => ({ ...item, group: group.label })))} onDismiss={() => setSearchOwner(null)} onChoose={(destination) => { setSearchOwner(null); go(destination as View) }} />}
 
       <main id="main-content" key={`${user?.id || 'public'}:${token || ''}`}>
         {expired && <p role="alert" className="notice session-notice">{t.attendanceSessionExpired}</p>}
@@ -119,6 +167,7 @@ function Shell() {
         {user && activeView === 'children' && <Children />}
       </main>
       <footer className="footer"><span className="footer-mark" aria-hidden="true"><Icon name="leaf" size={15} /></span><p>{t.footer}</p></footer>
+      </div>
     </div>
   )
 }
@@ -142,12 +191,21 @@ function Home({ onLogin }: { onLogin: () => void }) {
   return <>
     <section className="hero">
       <div className="hero-copy"><p className="eyebrow"><Icon name="sun" size={17} />{t.brandCaption}</p><h1 tabIndex={-1}>{t.heroTitle}</h1><p className="lead">{t.heroSub}</p><div className="hero-cta"><button type="button" className="btn primary" onClick={onLogin}>{t.ctaStart}<Icon name="arrow" /></button><span className="hero-language"><Icon name="check" size={16} />{t.featureLang}</span></div><p className="hero-footnote">{t.careTogether}</p></div>
-      <div className="hero-visual"><GardenArt /><div className="preview-report"><span className="preview-label">{t.exampleReport}</span><div className="card-avatar-heading"><span className="preview-avatar" aria-hidden="true">AK</span><div><strong>Arta Krasniqi</strong><p>{t.reportsMoodVal}</p></div><span className="preview-check"><Icon name="check" /></span></div><div className="preview-details"><span><Icon name="meals" size={17} />{t.mealsAll}</span><span><Icon name="clock" size={17} />{t.napShort}</span></div></div><div className="preview-bubble"><Icon name="leaf" /><span>{t.littleMoments}</span></div></div>
+      <WorkspacePreview />
     </section>
     <section className="landing-section"><div className="section-heading"><p className="eyebrow">{t.everyDayTitle}</p><h2>{t.everyDayBody}</h2></div><div className="features">{([{ title: t.featureReports, body: t.featureReportsBody, icon: 'reports' }, { title: t.featurePayments, body: t.featurePaymentsBody, icon: 'payments' }, { title: t.featureLang, body: t.featureLangBody, icon: 'messages' }, { title: t.featureSafety, body: t.featureSafetyBody, icon: 'incidents' }] as const).map((feature) => <article key={feature.title}><span className="feature-icon"><Icon name={feature.icon} size={23} /></span><h3>{feature.title}</h3><p>{feature.body}</p></article>)}</div></section>
     <section className="roles"><article><Icon name="children" size={28} /><h2>{t.forParents}</h2><p>{t.forParentsBody}</p></article><article><Icon name="leaf" size={28} /><h2>{t.forStaff}</h2><p>{t.forStaffBody}</p></article></section>
     <section className="landing-invitation"><div><h2>{t.careTogether}</h2><p>{t.loginIntro}</p></div><button className="btn primary" onClick={onLogin}>{t.ctaStart}<Icon name="arrow" /></button></section>
   </>
+}
+
+function WorkspacePreview() {
+  const { t } = useI18n()
+  return <div className="product-preview" aria-label={t.exampleWorkspace}>
+    <div className="product-preview-bar"><span className="preview-window-dots" aria-hidden="true"><i /><i /><i /></span><span>{t.exampleWorkspace}</span><Icon name="incidents" size={14} /></div>
+    <div className="product-preview-body"><aside><div className="preview-brand"><BrandMark />{t.brand}</div>{([{ icon: 'dashboard', label: t.navDashboard }, { icon: 'attendance', label: t.attendanceTitle }, { icon: 'reports', label: t.navReports }, { icon: 'messages', label: t.navMessages }, { icon: 'payments', label: t.navPayments }] as const).map((page, index) => <div className={index === 0 ? 'selected' : ''} key={page.icon}><Icon name={page.icon} size={15} />{page.label}</div>)}</aside>
+    <div className="preview-workspace"><p className="preview-greeting"><Icon name="sun" size={16} />{t.dayOverview}</p><h2>{t.careTogether}</h2><div className="preview-metrics">{[{ label: t.dashChildren, value: '3' }, { label: t.attendancePresent, value: '2' }, { label: t.dashReports, value: '2 / 3' }].map((metric) => <div key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></div>)}</div><h3>{t.childrenToday}</h3><div className="preview-register">{['Arta Krasniqi', 'Luan Berisha', 'Era Gashi'].map((name, index) => <div key={name}><span className={`sample-avatar sample-avatar-${index}`}>{name.split(' ').map((part) => part[0]).join('')}</span><strong>{name}</strong><span className={`attendance-status ${index === 2 ? 'unmarked' : 'present'}`}>{index === 2 ? t.attendanceUnmarked : t.attendancePresent}</span><Icon name={index === 2 ? 'clock' : 'check'} size={15} /></div>)}</div></div></div>
+  </div>
 }
 
 function Login({ onSuccess }: { onSuccess: () => void }) {
