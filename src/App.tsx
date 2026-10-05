@@ -25,6 +25,7 @@ import PageFinder from './PageFinder'
 import './App.css'
 import './theme.css'
 import './Sidebar.css'
+import './Kindergarten.css'
 
 type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones'
 

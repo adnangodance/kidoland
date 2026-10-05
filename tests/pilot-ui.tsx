@@ -52,6 +52,7 @@ async function until(check: () => unknown, label = 'UI state') { const deadline 
 const main = () => document.querySelector('main') || document.getElementById('root')!
 async function capture(screen: string) {
   output.style.display = 'none'
+  await Promise.all(document.getAnimations().filter((animation) => animation instanceof CSSTransition).map((animation) => animation.finished.catch(() => {})))
   await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
   const response = await originalFetch(`/__pilot_capture?screen=${screen}`)
   if (!response.ok) throw new Error(`Screenshot failed: ${screen}`)
@@ -98,7 +99,7 @@ function fit(label: string) {
   const visible = (element: HTMLElement) => !element.closest('[inert]') && element.getBoundingClientRect().width > 0
   const navigation = document.querySelector<HTMLElement>('.sidebar .nav-links')
   if (navigation && visible(navigation)) assert(navigation.scrollWidth <= navigation.clientWidth + 1, `${label}: navigation stays in a single sidebar column`)
-  assert(document.documentElement.scrollWidth <= window.innerWidth && [...document.querySelectorAll<HTMLElement>('nav button,input,select,textarea')].filter(visible).every((element) => { const box = element.getBoundingClientRect(); return box.right <= window.innerWidth + 1 && box.left >= -1 }), `${label}: navigation and controls fit ${window.innerWidth}px`)
+  assert(document.documentElement.scrollWidth <= window.innerWidth && [...document.querySelectorAll<HTMLElement>('button,input,select,textarea')].filter(visible).every((element) => { const box = element.getBoundingClientRect(); return box.right <= window.innerWidth + 1 && box.left >= -1 }), `${label}: navigation and controls fit ${window.innerWidth}px`)
   assert([...document.querySelectorAll<HTMLElement>('nav button')].filter(visible).every((element) => element.getBoundingClientRect().height >= 40) && (!document.querySelector('.workspace') || [...document.querySelectorAll<HTMLElement>('.menu-toggle, nav button')].filter(visible).some((element) => element.getBoundingClientRect().height >= 40)), `${label}: navigation remains reachable through labeled links or menu`)
 }
 
@@ -110,6 +111,13 @@ async function run() {
   await new Promise((resolve) => setTimeout(resolve, 350))
   const dashboardBox = main().getBoundingClientRect(), canvasBox = document.querySelector('.workspace-frame')!.getBoundingClientRect()
   assert(dashboardBox.left >= canvasBox.left, `dashboard stays inside the framed canvas (${dashboardBox.left}, ${canvasBox.left})`)
+  await until(() => main().querySelector('.day-child-card'), 'loaded dashboard children')
+  assert(main().querySelectorAll('.metric-card').length === 6 && main().querySelector('.playground-art')?.getAttribute('aria-hidden') === 'true', 'kindergarten welcome keeps decorative art separate from six real metrics')
+  assert(main().querySelectorAll('.day-child-card').length === 2 && main().querySelector('.day-child-card')?.textContent?.includes('Arta Krasniqi'), 'staff dashboard renders real children with their attendance and report actions')
+  const welcomeArt = main().querySelector('.playground-art')!.getBoundingClientRect(), welcomeDate = main().querySelector('.dashboard-date')!.getBoundingClientRect()
+  assert(welcomeArt.bottom <= welcomeDate.top + 1 || welcomeArt.right <= welcomeDate.left + 1 || welcomeDate.right <= welcomeArt.left + 1, 'decorative welcome drawing has its own space outside the date controls')
+  const artaCard = [...main().querySelectorAll('.day-child-card')].find((card) => card.textContent?.includes('Arta Krasniqi'))!
+  assert(artaCard.querySelector('.attendance-status.unmarked')?.textContent === translations.en.attendanceUnmarked && artaCard.querySelector('.record-ready')?.textContent === translations.en.reportReady && artaCard.querySelector('.allergy-badge')?.textContent?.includes(translations.en.allergies), 'child cards preserve real attendance, report readiness, and allergy warnings')
   await capture('director-dashboard')
   const finderTrigger = [...document.querySelectorAll<HTMLButtonElement>('.sidebar-search,.header-search')].find((element) => !element.closest('[inert]') && element.getBoundingClientRect().height > 0)!
   finderTrigger.focus(); finderTrigger.click(); await until(() => document.querySelector('dialog[open]'))
@@ -182,6 +190,10 @@ async function run() {
   await until(() => document.querySelectorAll('.finder-result').length === 1)
   document.querySelector<HTMLButtonElement>('.finder-result')!.click(); await until(() => document.querySelector('.sidebar [data-view=payments]')?.getAttribute('aria-current') === 'page')
   assert(!document.querySelector('.sidebar [data-view=payments]')!.closest('[hidden]') && morePages.getAttribute('aria-expanded') === 'true', 'page search reveals the selected secondary destination after More was collapsed')
+  await nav(translations.en.navDashboard); await until(() => main().querySelector('.day-child-card'))
+  const staffReport = [...main().querySelectorAll<HTMLButtonElement>('.day-child-card button')].find((element) => element.getAttribute('aria-label')?.includes('Arta Krasniqi'))!
+  staffReport.click(); await until(() => main().querySelector<HTMLSelectElement>('select')?.value === 'c-arta' && main().querySelector('form'))
+  assert(field(translations.en.paymentsChild).value === 'c-arta' && field(translations.en.attendanceDate).value === localCalendarDate(), 'staff child-card report action carries the real child and selected date')
   await nav(translations.en.childrenTitle)
   await until(() => main().querySelector('.roster-card'))
   button(translations.en.newParent, main())
@@ -196,7 +208,7 @@ async function run() {
   await until(() => !main().querySelector('input[type=password]'))
   assert(true, 'director provisions and reconciles an explicit parent account')
   button(translations.en.createChild, main())
-  await until(() => main().querySelector('select'))
+  await until(() => main().querySelector('form'))
   await set(translations.en.childName, 'Browser Child With A Long Name For Mobile'); await set(translations.en.attendanceGroup, 'Browser group')
   const parentSelect = field(translations.en.linkedParent) as HTMLSelectElement
   const family = [...parentSelect.options].find((option) => option.text.includes('browser@example.test'))!
@@ -243,11 +255,17 @@ async function run() {
   assert(!main().querySelector('[role=status]'), 'editing report activities clears Saved')
   await set(translations.en.reportsMood, 'mood:happy'); await set(translations.en.reportsNote, 'Browser note'); button(translations.en.reportSave, main()); await until(() => main().textContent?.includes(translations.en.attendanceSaved))
   await nav(translations.en.attendanceTitle); await nav(translations.en.navReports); await until(() => main().querySelector('form')); await set(translations.en.paymentsChild, childId)
-  await until(() => (field(translations.en.reportsNote) as HTMLTextAreaElement).value === 'Browser note')
+  await until(() => main().querySelector<HTMLTextAreaElement>('textarea')?.value === 'Browser note')
   assert(field(translations.en.reportsMood).value === 'mood:happy', 'report correction preloads exact child/day values')
   await set(translations.en.reportsMood, 'mood:calm'); await set(translations.en.reportsNote, 'Corrected browser note')
   const fileInput = field(translations.en.reportPhoto) as HTMLInputElement
-  const file = new File(['image-content'], 'pic.png', { type: 'image/png' })
+  const photoCanvas = document.createElement('canvas')
+  photoCanvas.width = 480; photoCanvas.height = 320
+  const photoContext = photoCanvas.getContext('2d')!
+  photoContext.fillStyle = '#f8efdf'; photoContext.fillRect(0, 0, 480, 320)
+  ;['#a9cabb', '#eeb298', '#c5b3dc'].forEach((color, index) => { photoContext.fillStyle = color; photoContext.fillRect(90 + index * 100, 110 - index * 20, 90, 100 + index * 20) })
+  const photoBlob = await new Promise<Blob>((resolve) => photoCanvas.toBlob((blob) => resolve(blob!), 'image/png'))
+  const file = new File([photoBlob], 'pic.png', { type: 'image/png' })
   const dt = new DataTransfer()
   dt.items.add(file)
   fileInput.files = dt.files
@@ -256,6 +274,12 @@ async function run() {
   assert(Boolean(main().querySelector('.report-image-preview img')), 'file input loads report image preview')
   button(translations.en.reportSave, main()); await until(() => main().textContent?.includes(translations.en.attendanceSaved)); fit('teacher report')
   assert(Boolean(main().querySelector('.report-photo img')), 'saved report displays uploaded photo')
+  await until(() => main().querySelector<HTMLImageElement>('.report-photo img')?.naturalWidth === 480)
+  assert(main().querySelector<HTMLImageElement>('.report-photo img')?.naturalHeight === 320, 'saved report photo decodes at the original uploaded dimensions')
+  assert(main().querySelectorAll('.report-story-entry').length === 5 && main().querySelector('.story-moment')?.textContent?.includes('Corrected browser note') && main().querySelector('.story-moment .report-photo img'), 'daily care story groups real saved values, authored note, and uploaded photo without invented event times')
+  const savedStory = main().querySelector('.report-story-card')!
+  assert(savedStory.querySelector('.story-mood p')?.textContent === translations.en.moodCalm && savedStory.querySelector('.story-meals p')?.textContent === translations.en.mealsSome && savedStory.querySelector('.story-nap p')?.textContent === translations.en.napLong && savedStory.querySelector('.story-activities p')?.textContent?.includes(translations.en.activityOutdoor) && savedStory.querySelector('.report-author')?.textContent?.includes('Mira Hoxha'), 'daily report presentation preserves every saved care value and teacher attribution')
+  await capture('saved-report')
   button(`SQ · ${translations.en.langToggle}`)
   await until(() => document.documentElement.lang === 'sq')
   assert(field(translations.sq.reportsNote).value === 'Corrected browser note' && field(translations.sq.reportsMood).value === 'mood:calm', 'language switch translates controls and preserves report draft')
@@ -295,7 +319,7 @@ async function run() {
   await set(translations.en.paymentsChild, childId); await set(translations.en.paymentsPeriod, 'Browser October'); await set(translations.en.fee, 'Tuition'); await set(translations.en.paymentsAmountLabel, '12.34')
   button(translations.en.addFee, main()); await until(() => main().querySelectorAll('input[type=number]').length === 2); const descriptions = [...main().querySelectorAll<HTMLLabelElement>('label')].filter((label) => label.childNodes[0]?.textContent?.trim() === translations.en.fee); const amounts = [...main().querySelectorAll<HTMLLabelElement>('label')].filter((label) => label.childNodes[0]?.textContent?.trim() === translations.en.paymentsAmountLabel)
   fill(descriptions[1].querySelector('input')!, 'Meals'); fill(amounts[1].querySelector('input')!, '5.67'); await new Promise((resolve) => setTimeout(resolve, 10))
-  fit('teacher invoice'); loseInvoice = true; button(translations.en.paymentsCreate, main()); await until(() => main().querySelector('[role=alert]'))
+  fit('teacher invoice'); await capture('payments'); loseInvoice = true; button(translations.en.paymentsCreate, main()); await until(() => main().querySelector('[role=alert]'))
   assert(field(translations.en.paymentsPeriod).value === 'Browser October', 'lost invoice response retains unchanged draft for retry')
   await nav(translations.en.navDashboard); await nav(translations.en.navPayments); await until(() => main().querySelector('form'))
   assert(field(translations.en.paymentsPeriod).value === 'Browser October' && main().querySelectorAll('input[type=number]').length === 2, 'unresolved invoice draft and line items survive navigation')
@@ -322,16 +346,17 @@ async function run() {
   await nav(translations.en.navReports); await until(() => main().querySelector('.roster-card'))
   assert(main().textContent?.includes('Corrected browser note') && main().textContent?.includes(translations.en.moodCalm) && !main().querySelector('form'), 'parent reads corrected linked report')
   assert(Boolean(main().querySelector('.report-photo img')), 'parent reads uploaded report photo')
+  await capture('parent-report')
   await nav(translations.en.consentTitle); await until(() => main().querySelector('input[type=radio]'))
   main().querySelector<HTMLInputElement>('input[type=radio][value=true]')?.click()
   // Native consent radio values are intentionally independent of translated text.
   const radios = main().querySelectorAll<HTMLInputElement>('input[type=radio]'); radios[0].click(); await new Promise((resolve) => setTimeout(resolve, 10)); failPath = '/consent'; button(translations.en.saveChoice, main()); await until(() => main().querySelector('[role=alert]'));
   assert(radios[0].checked && main().textContent?.includes(translations.en.notAllowed), 'failed consent save keeps draft and last confirmed permission')
   button(translations.en.attendanceRetry, main()); await until(() => main().textContent?.includes(translations.en.attendanceSaved))
-  assert(main().textContent?.includes(translations.en.allowed), 'parent photo consent persists after explicit save'); fit('parent consent')
+  assert(main().textContent?.includes(translations.en.allowed), 'parent photo consent persists after explicit save'); fit('parent consent'); await capture('parent-consent')
   assert(main().textContent?.includes(translations.en.authorizedPickups), 'parent view exposes authorized pickups section')
   await nav(translations.en.navMessages); await until(() => main().textContent?.includes(translations.en.noMessages))
-  assert(main().textContent?.includes(translations.en.messagesTitle), 'new parent opens direct messages panel'); fit('parent messages')
+  assert(main().textContent?.includes(translations.en.messagesTitle), 'new parent opens direct messages panel'); fit('parent messages'); await capture('messages')
   button(`+ ${translations.en.newMessage}`, main()); await until(() => main().querySelector('textarea'))
   await set(translations.en.messageSubject, 'Browser Question'); await set(translations.en.messageContent, 'Browser message inquiry')
   button(translations.en.startConversation, main()); await until(() => main().querySelector('.chat-message-stream'))
@@ -353,19 +378,20 @@ async function run() {
   button(translations.en.reportAbsence, main().querySelector('.absence-form')!); await until(() => main().textContent?.includes(translations.en.absenceReported))
   assert(main().textContent?.includes('Recovering from mild flu'), 'parent successfully submits absence notice')
   await nav(translations.en.navMeals); await until(() => main().textContent?.includes(translations.en.mealsTitle))
-  assert(main().textContent?.includes(translations.en.mealsTitle), 'parent navigates to food menu'); fit('weekly meals')
+  assert(main().textContent?.includes(translations.en.mealsTitle), 'parent navigates to food menu'); fit('weekly meals'); await capture('meals')
   button(translations.en.tuesday, main()); await until(() => main().textContent?.includes('Hearty lentil'))
   assert(main().textContent?.includes('Hearty lentil'), 'parent views Tuesday meal details')
   await nav(translations.en.navIncidents); await until(() => main().textContent?.includes(translations.en.incidentsTitle))
-  assert(main().textContent?.includes(translations.en.incidentsTitle), 'parent navigates to health and incidents'); fit('health and incidents')
+  await until(() => main().textContent?.includes(translations.en.medicalProfile), 'loaded emergency medical profile')
+  assert(main().textContent?.includes(translations.en.incidentsTitle), 'parent navigates to health and incidents'); fit('health and incidents'); await capture('incidents')
   assert(main().textContent?.includes(translations.en.medicalProfile), 'parent sees emergency medical profile')
   await nav(translations.en.navMoments); await until(() => main().textContent?.includes(translations.en.momentsTitle))
   await until(() => main().querySelector('.moment-card'))
-  assert(main().textContent?.includes(translations.en.momentsTitle), 'parent navigates to classroom moments'); fit('classroom moments')
+  assert(main().textContent?.includes(translations.en.momentsTitle), 'parent navigates to classroom moments'); fit('classroom moments'); await capture('moments')
   assert(Boolean(main().querySelector('.moment-card')), 'parent sees classroom moments feed')
   await nav(translations.en.navEvents); await until(() => main().textContent?.includes(translations.en.eventsTitle))
   await until(() => main().querySelector('.event-card'))
-  assert(main().textContent?.includes(translations.en.eventsTitle), 'parent navigates to events and calendar'); fit('events feed')
+  assert(main().textContent?.includes(translations.en.eventsTitle), 'parent navigates to events and calendar'); fit('events feed'); await capture('events')
   assert(Boolean(main().querySelector('.event-card')), 'parent sees upcoming kindergarten events')
   assert(main().textContent?.includes(translations.en.badgeFieldTripSlip), 'parent sees field trip permission slip requirement')
   const rsvpBtn = [...main().querySelectorAll<HTMLButtonElement>('.event-card button')].find((b) => b.textContent?.includes(translations.en.submitRsvp) || b.textContent?.includes('RSVP'))!
@@ -374,12 +400,12 @@ async function run() {
   button(translations.en.cancelAbsence, main().querySelector('.event-rsvp-modal')!); await until(() => !main().querySelector('.event-rsvp-modal'))
   await logout(); await login('director'); await nav(translations.en.navStaffShifts); await until(() => main().textContent?.includes(translations.en.staffShiftsTitle))
   await until(() => main().querySelector('.ratio-card'))
-  assert(main().textContent?.includes(translations.en.ratioComplianceTitle), 'director navigates to staff shifts and room ratio monitor'); fit('staff shifts and ratios')
+  assert(main().textContent?.includes(translations.en.ratioComplianceTitle), 'director navigates to staff shifts and room ratio monitor'); fit('staff shifts and ratios'); await capture('staff')
   assert(Boolean(main().querySelector('.ratio-card')), 'director views room ratio compliance cards')
   assert(main().textContent?.includes(translations.en.badgeOptimal), 'director sees compliant room ratio badge')
   await nav(translations.en.navMilestones); await until(() => main().textContent?.includes(translations.en.milestonesTitle))
   await until(() => main().querySelector('.milestone-card'))
-  assert(main().textContent?.includes(translations.en.overallProgress), 'director navigates to developmental milestones and views progress summary'); fit('milestones panel')
+  assert(main().textContent?.includes(translations.en.overallProgress), 'director navigates to developmental milestones and views progress summary'); fit('milestones panel'); await capture('milestones')
   assert(Boolean(main().querySelector('.milestone-card')), 'director sees early childhood milestone cards')
   assert(main().textContent?.includes(translations.en.badgeMastered), 'director sees mastered milestone badge')
   await nav(translations.en.childrenTitle); await until(() => main().querySelector('.roster-card'))

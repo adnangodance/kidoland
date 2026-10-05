@@ -6,13 +6,13 @@ function getChildInitials(name: string): string {
 }
 
 const AVATAR_PALETTES = [
-  { bg: '#e8f5e9', color: '#1b5e20', border: '#c8e6c9' }, // cheerful mint
-  { bg: '#fff3e0', color: '#b74b00', border: '#ffe0b2' }, // warm sunshine orange
-  { bg: '#e3f2fd', color: '#0d47a1', border: '#bbdefb' }, // soft sky blue
-  { bg: '#f3e5f5', color: '#6a1b9a', border: '#e1bee7' }, // playful lavender
-  { bg: '#fffde7', color: '#827717', border: '#fff59d' }, // bright buttercup
-  { bg: '#fce4ec', color: '#880e4f', border: '#f8bbd0' }, // soft rose
-  { bg: '#e0f2f1', color: '#004d40', border: '#80cbc4' }, // ocean teal
+  { bg: '#e0efe3', color: '#3f654b', border: '#c9e2cf' },
+  { bg: '#fbe4d5', color: '#89543c', border: '#f0ceb9' },
+  { bg: '#deedf9', color: '#416483', border: '#c6dfef' },
+  { bg: '#ece3f8', color: '#70558a', border: '#ded0ee' },
+  { bg: '#fff0c8', color: '#7b602a', border: '#f0dda3' },
+  { bg: '#fae2e7', color: '#8f4d61', border: '#f0cbd5' },
+  { bg: '#daf0ed', color: '#3e716b', border: '#bee2dc' },
 ]
 
 function getAvatarColor(name: string) {
@@ -38,7 +38,7 @@ export default function ChildAvatar({ name, size = 36 }: { name: string; size?: 
         minWidth: `${size}px`,
         backgroundColor: palette.bg,
         color: palette.color,
-        border: `1.5px solid ${palette.border}`,
+        border: `1px solid ${palette.border}`,
       }}
     >
       {initials}

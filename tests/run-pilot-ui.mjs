@@ -47,8 +47,22 @@ try {
   socket.onmessage = (event) => { const message = JSON.parse(event.data); if (message.id) { pending.get(message.id)?.(message); pending.delete(message.id) } }
   const command = (method, params) => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, (message) => message.error ? reject(new Error(message.error.message)) : resolve(message.result)); socket.send(JSON.stringify({ id, method, params })) })
   capturePage = async (label) => {
-    const capture = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true })
-    await writeFile(path.join('/tmp', `kidoland-${label}-${width}.png`), Buffer.from(capture.data, 'base64'))
+    // The app scrolls inside its canvas. Expand only for visual export, then restore.
+    await command('Runtime.evaluate', { expression: `(() => {
+      const elements = [...document.querySelectorAll('.workspace, .workspace-frame')];
+      window.__pilotCaptureLayout = elements.map(element => [element, element.getAttribute('style')]);
+      elements.forEach(element => { element.style.height = 'auto'; element.style.overflow = 'visible'; });
+    })()` })
+    try {
+      const { cssContentSize } = await command('Page.getLayoutMetrics')
+      const capture = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { x: 0, y: 0, width: Number(width), height: cssContentSize.height, scale: 1 } })
+      await writeFile(path.join('/tmp', `kidoland-${label}-${width}.png`), Buffer.from(capture.data, 'base64'))
+    } finally {
+      await command('Runtime.evaluate', { expression: `(() => {
+        window.__pilotCaptureLayout.forEach(([element, style]) => style === null ? element.removeAttribute('style') : element.setAttribute('style', style));
+        delete window.__pilotCaptureLayout;
+      })()` })
+    }
   }
   await command('Emulation.setDeviceMetricsOverride', { width: Number(width), height: 1000, deviceScaleFactor: 1, mobile: false })
   await command('Page.navigate', { url: `http://127.0.0.1:${address.port}/tests/pilot-ui.html?width=${width}` })

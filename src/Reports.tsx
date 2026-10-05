@@ -7,6 +7,7 @@ import { useI18n } from './i18n/language-context'
 import { localCalendarDate, validDate } from './attendance-date.js'
 import { displayDate, useAlive } from './pilot-utils'
 import ChildAvatar from './ChildAvatar'
+import Icon from './Icon'
 
 const options = {
   mood: [['mood:happy', 'moodHappy'], ['mood:calm', 'moodCalm'], ['mood:tired', 'moodTired'], ['mood:upset', 'moodUpset']],
@@ -152,24 +153,42 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
       <h2 className="form-section-title">{t.reportDetails}</h2>
       {reports.length > 0 && <p>{t.reportCorrection}</p>}
       <fieldset disabled={busy}>
-        <div className="report-basics">{(['mood', 'meals', 'nap'] as const).map((field) => <label key={field}>{t[({ mood: 'reportsMood', meals: 'reportsMeals', nap: 'reportsNap' } as const)[field]]}<select required value={draft[field]} onChange={(e) => { setSaved(false); setDraft({ ...draft, [field]: e.target.value }) }}><option value="">{t.choose}</option>{draft[field] && !options[field].some(([code]) => code === draft[field]) && <option value={draft[field]}>{translated(draft[field])}</option>}{options[field].map(([code, key]) => <option key={code} value={code}>{t[key]}</option>)}</select></label>)}</div>
-        <fieldset className="report-activities"><legend>{t.reportsActivities}</legend>
+        <div className="editor-section"><h3><span>01</span>{t.reportBasics}</h3><div className="report-basics">{(['mood', 'meals', 'nap'] as const).map((field) => <label key={field}>{t[({ mood: 'reportsMood', meals: 'reportsMeals', nap: 'reportsNap' } as const)[field]]}<select required value={draft[field]} onChange={(e) => { setSaved(false); setDraft({ ...draft, [field]: e.target.value }) }}><option value="">{t.choose}</option>{draft[field] && !options[field].some(([code]) => code === draft[field]) && <option value={draft[field]}>{translated(draft[field])}</option>}{options[field].map(([code, key]) => <option key={code} value={code}>{t[key]}</option>)}</select></label>)}</div></div>
+        <fieldset className="report-activities editor-section"><legend><span>02</span>{t.reportActivitiesTitle}</legend>
           {draft.activities && draft.activities.split('|').some((code) => !options.activities.some(([id]) => id === code))
             ? <><label>{t.reportsActivities}<input value={draft.activities} onChange={(e) => { setSaved(false); setDraft({ ...draft, activities: e.target.value }) }} /></label><button type="button" className="btn ghost" onClick={() => { setSaved(false); setDraft({ ...draft, activities: '' }) }}>{t.useChecklist}</button></>
             : options.activities.map(([code, key]) => <label className="choice" key={code}><input type="checkbox" checked={draft.activities.split('|').includes(code)} onChange={(e) => { const chosen = draft.activities.split('|').filter(Boolean); setSaved(false); setDraft({ ...draft, activities: e.target.checked ? [...chosen, code].join('|') : chosen.filter((v) => v !== code).join('|') }) }} />{t[key]}</label>)}
         </fieldset>
-        <label>{t.reportsNote}<textarea rows={3} maxLength={5000} value={draft.note} onChange={(e) => { setSaved(false); setDraft({ ...draft, note: e.target.value }) }} /></label>
+        <div className="editor-section"><h3><span>03</span>{t.reportNoteTitle}</h3><label>{t.reportsNote}<textarea rows={4} maxLength={5000} value={draft.note} onChange={(e) => { setSaved(false); setDraft({ ...draft, note: e.target.value }) }} /></label></div>
+        <div className="editor-section"><h3><span>04</span>{t.reportPhotoTitle}</h3>
         <label>{t.reportPhoto}<input ref={fileInputRef} type="file" accept="image/*" disabled={busy} onChange={handleImage} /></label>
         {imageError && <p className="form-error" role="alert">{imageError}</p>}
         {draft.imageUrl && <div className="report-image-preview"><img src={draft.imageUrl} alt={t.reportPhoto} /><button type="button" className="btn ghost" disabled={busy} onClick={removeImage}>{t.removeImage}</button></div>}
         {selectedChild && <p className="hint">{t.permission}: <strong>{selectedChild.photoConsent ? t.allowed : t.notAllowed}</strong>{!selectedChild.photoConsent && ` — ${t.imageConsentNotice}`}</p>}
-        <div className="actions" style={{ flexWrap: 'wrap', gap: '0.65rem' }}>
+        </div><div className="actions editor-actions">
           <button className="btn primary" disabled={!draft.activities}>{busy ? t.attendanceSaving : t.reportSave}</button>
           <button type="button" className="btn ghost" disabled={!draft.activities || busy || !selectedChild?.groupName} onClick={() => void batchApply()}>{t.batchApplyToGroup}</button>
         </div>
       </fieldset>
     </form>}
     {!loading && !rosterError && error !== 'load' && validDate(date) && reports.length === 0 && <p>{t.reportEmpty}</p>}
-    {!loading && reports.map((report) => <article className="roster-card" key={report.id}><div className="card-avatar-heading"><ChildAvatar name={report.childName} size={42} /><div><h2>{report.childName} · {displayDate(report.reportDate, lang)}</h2><p className="card-subtitle">{report.groupName} · {report.teacherName}</p></div></div>{report.allergies && <p className="allergy-badge">⚠️ <strong>{t.allergies}:</strong> {report.allergies}</p>}<div className="report-grid">{(['mood', 'meals', 'nap', 'activities'] as const).map((field) => <div key={field}><h3><span className="report-field-icon" aria-hidden="true">{fieldIcons[field]}</span> {t[({ mood: 'reportsMood', meals: 'reportsMeals', nap: 'reportsNap', activities: 'reportsActivities' } as const)[field]]}</h3><p>{translated(report[field])}</p></div>)}</div>{report.note && <p><strong>{t.reportsNote}:</strong> {report.note}</p>}{report.imageUrl && <div className="report-photo"><img src={report.imageUrl} alt={`${report.childName} · ${report.reportDate}`} /></div>}</article>)}
+    {!loading && reports.map((report) => <article className="roster-card report-story-card" key={report.id}>
+      <div className="card-avatar-heading"><ChildAvatar name={report.childName} size={52} /><div><h2>{report.childName}</h2><p className="card-subtitle">{displayDate(report.reportDate, lang)} · {report.groupName}</p></div><span className="report-day-mark" aria-hidden="true"><Icon name="sun" size={24} /></span></div>
+      {report.allergies && <p className="allergy-badge">⚠️ <strong>{t.allergies}:</strong> {report.allergies}</p>}
+      <div className="report-story">
+        {(['mood', 'meals', 'nap', 'activities'] as const).map((field) => <div className={`report-story-entry story-${field}`} key={field}>
+          <span className="story-marker" aria-hidden="true">{fieldIcons[field]}</span>
+          <div className="story-content"><h3>{t[({ mood: 'reportsMood', meals: 'reportsMeals', nap: 'reportsNap', activities: 'reportsActivities' } as const)[field]]}<span aria-hidden="true">{fieldIcons[field]}</span></h3><p>{translated(report[field])}</p></div>
+        </div>)}
+        {(report.note || report.imageUrl) && <div className="report-story-entry story-moment">
+          <span className="story-marker" aria-hidden="true"><Icon name="moments" size={18} /></span>
+          <div className="story-content"><h3>{report.note ? t.reportNoteTitle : t.reportPhotoTitle}<Icon name="moments" size={20} /></h3>
+            {report.note && <p className="story-note">{report.note}</p>}
+            {report.imageUrl && <div className="report-photo"><img src={report.imageUrl} alt={`${report.childName} · ${displayDate(report.reportDate, lang)}`} /></div>}
+          </div>
+        </div>}
+      </div>
+      <p className="report-author"><Icon name="leaf" size={16} /><span>{t.roleTeacher}: <strong>{report.teacherName}</strong></span></p>
+    </article>)}
   </section>
 }
