@@ -7,7 +7,7 @@ const icons: Record<string, KimiIconName> = {
   dashboard: 'myKimi', attendance: 'kimiCode', reports: 'docs', program: 'build',
   meals: 'design', messages: 'openPlatform', announcements: 'slides', moments: 'inspiration',
   events: 'scheduled', children: 'newProject', payments: 'sheets', absences: 'plugins',
-  incidents: 'kimiClaw', milestones: 'deepResearch', staff: 'kimiWork',
+  incidents: 'kimiClaw', milestones: 'deepResearch', staff: 'kimiWork', documents: 'docs',
 }
 
 type Page = { view: string; label: string }

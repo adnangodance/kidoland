@@ -9,6 +9,10 @@ const dbPath = process.env.KIDOLAND_DB_PATH || path.join(__dirname, '..', 'kidol
 export const db = new Database(dbPath)
 db.pragma('foreign_keys = ON')
 
+export function localCalendarDate(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -320,7 +324,50 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
     UNIQUE(child_id, milestone_id)
   );
   CREATE INDEX IF NOT EXISTS child_milestone_child ON child_milestone_records(child_id);
-  CREATE INDEX IF NOT EXISTS child_milestone_status ON child_milestone_records(child_id, status);`)
+  CREATE INDEX IF NOT EXISTS child_milestone_status ON child_milestone_records(child_id, status);
+  CREATE TABLE IF NOT EXISTS child_documents (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    document_type TEXT NOT NULL CHECK(document_type IN ('enrollment_contract', 'vaccination_record', 'birth_certificate', 'medical_clearance', 'custody_legal', 'other')),
+    title TEXT NOT NULL,
+    file_url TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    file_size_bytes INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL CHECK(status IN ('pending_review', 'verified', 'rejected', 'expired')) DEFAULT 'pending_review',
+    notes TEXT NOT NULL DEFAULT '',
+    expiration_date TEXT,
+    uploaded_by TEXT NOT NULL REFERENCES users(id),
+    verified_by TEXT REFERENCES users(id),
+    verified_at TEXT,
+    rejection_reason TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS child_documents_child ON child_documents(child_id);
+  CREATE INDEX IF NOT EXISTS child_documents_status ON child_documents(status);
+  CREATE INDEX IF NOT EXISTS child_documents_type ON child_documents(document_type);`)
+
+export type DocumentType = 'enrollment_contract' | 'vaccination_record' | 'birth_certificate' | 'medical_clearance' | 'custody_legal' | 'other'
+export type DocumentStatus = 'pending_review' | 'verified' | 'rejected' | 'expired'
+
+export type DbChildDocument = {
+  id: string
+  child_id: string
+  document_type: DocumentType
+  title: string
+  file_url: string
+  file_name: string
+  file_size_bytes: number
+  status: DocumentStatus
+  notes: string
+  expiration_date: string | null
+  uploaded_by: string
+  verified_by: string | null
+  verified_at: string | null
+  rejection_reason: string | null
+  created_at: string
+  updated_at: string
+}
 
 export type MilestoneDomain = 'cognitive' | 'language' | 'motor' | 'social_emotional' | 'creative'
 export type MilestoneStatus = 'emerging' | 'achieved' | 'mastered'
@@ -501,7 +548,7 @@ db.prepare("UPDATE children SET allergies = 'Alergji në kikirik / Peanut allerg
 
 const reportCount = db.prepare('SELECT COUNT(*) AS c FROM reports').get() as { c: number }
 if (reportCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get() && db.prepare("SELECT id FROM users WHERE id = 'u-teacher'").get()) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localCalendarDate()
   db.prepare(
     `INSERT INTO reports (id, child_id, teacher_user_id, report_date, mood, meals, nap, activities, note, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -579,7 +626,7 @@ db.exec(`INSERT INTO invoice_items (id, invoice_id, description, amount_cents, p
 
 const programCount = db.prepare('SELECT COUNT(*) AS c FROM daily_programs').get() as { c: number }
 if (programCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-teacher'").get()) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localCalendarDate()
   db.prepare(`
     INSERT INTO daily_programs (id, group_name, program_date, theme, activities, meals_menu, notes, created_by, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -634,7 +681,7 @@ if (pickupCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-art
   insertPickup.run('pick-1', 'c-arta', 'Flora Krasniqi', 'Gjyshja / Grandmother', '+383 44 222 333', 1, new Date().toISOString())
   insertPickup.run('pick-2', 'c-arta', 'Valon Krasniqi', 'Daja / Uncle', '+383 49 111 222', 0, new Date().toISOString())
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localCalendarDate()
   db.prepare(`
     INSERT INTO pickup_logs (id, child_id, log_date, log_time, action, guardian_name, staff_user_id, notes, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1133,7 +1180,7 @@ if (milestoneCount.c === 0) {
       INSERT INTO child_milestone_records (id, child_id, milestone_id, status, observed_date, notes, evaluated_by, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localCalendarDate()
     const now = new Date().toISOString()
 
     insertRecord.run('mr-arta-1', 'c-arta', 'ms-lang-1', 'mastered', today, 'Shprehet shumë qartë, përdor fjalor të pasur dhe bën pyetje kurioze gjatë rrethit të mëngjesit.', 'u-teacher', now)
@@ -1142,4 +1189,73 @@ if (milestoneCount.c === 0) {
     insertRecord.run('mr-arta-4', 'c-arta', 'ms-mot-1', 'achieved', today, 'Kap lapsin me stil tripodi dhe pret letër me gërshërë sigurie.', 'u-teacher', now)
     insertRecord.run('mr-arta-5', 'c-arta', 'ms-soc-1', 'emerging', today, 'Po mëson të ndajë lodrat e preferuara të ndërtimit gjatë lojës së lirë në grup.', 'u-teacher', now)
   }
+}
+
+const docCount = db.prepare('SELECT COUNT(*) AS c FROM child_documents').get() as { c: number }
+if (docCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get() && db.prepare("SELECT id FROM users WHERE id = 'u-director'").get()) {
+  const insertDoc = db.prepare(`
+    INSERT INTO child_documents (id, child_id, document_type, title, file_url, file_name, file_size_bytes, status, notes, expiration_date, uploaded_by, verified_by, verified_at, rejection_reason, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const now = new Date().toISOString()
+
+  // 1. Enrollment Contract - Verified
+  insertDoc.run(
+    'doc-arta-contract',
+    'c-arta',
+    'enrollment_contract',
+    'Kontrata e Regjistrimit në Kopsht 2026/27 / Signed Kindergarten Enrollment Agreement',
+    'data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp/Og0MTGCjQgMCBvYmoKPDwgL0xlbmd0aCA1IDAgUiAvRmlsdGVyIC9GbGF0ZURlY29kZSA+PgpzdHJlYW0KeJzLSM3JyVcozy/KSVECAB6mBIEKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjE4CmVuZG9iagoxIDAgb2JqCjw8IC9UeXBlIC9DYXRhbG9nIC9QYWdlcyAyIDAgUiA+PgplbmRvYmoK',
+    'kontrata_regjistrimit_arta_2026.pdf',
+    245760,
+    'verified',
+    'Nënshkruar nga prindi dhe drejtoria e kopshtit. / Signed by parent and administration.',
+    null,
+    'u-parent',
+    'u-director',
+    now,
+    null,
+    now,
+    now,
+  )
+
+  // 2. Vaccination Card - Verified
+  insertDoc.run(
+    'doc-arta-vax',
+    'c-arta',
+    'vaccination_record',
+    'Libreza Zyrtare e Vaksinimit të Fëmijës / Official Immunization Record',
+    'data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp/Og0MTGCjQgMCBvYmoKPDwgL0xlbmd0aCA1IDAgUiAvRmlsdGVyIC9GbGF0ZURlY29kZSA+PgpzdHJlYW0KeJzLSM3JyVcozy/KSVECAB6mBIEKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjE4CmVuZG9iagoxIDAgb2JqCjw8IC9UeXBlIC9DYXRhbG9nIC9QYWdlcyAyIDAgUiA+PgplbmRvYmoK',
+    'libreza_vaksinimit_arta.pdf',
+    384120,
+    'verified',
+    'Të gjitha vaksinat e rregullta sipas kalendarit kombëtar janë kryer. / All mandatory childhood immunizations up to date.',
+    '2027-09-01',
+    'u-parent',
+    'u-director',
+    now,
+    null,
+    now,
+    now,
+  )
+
+  // 3. Medical Clearance - Pending Review
+  insertDoc.run(
+    'doc-arta-medical',
+    'c-arta',
+    'medical_clearance',
+    'Vërtetimi Mjekësor Pediatrik për Kopsht / Pediatric Health Certificate',
+    'data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp/Og0MTGCjQgMCBvYmoKPDwgL0xlbmd0aCA1IDAgUiAvRmlsdGVyIC9GbGF0ZURlY29kZSA+PgpzdHJlYW0KeJzLSM3JyVcozy/KSVECAB6mBIEKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjE4CmVuZG9iagoxIDAgb2JqCjw8IC9UeXBlIC9DYXRhbG9nIC9QYWdlcyAyIDAgUiA+PgplbmRvYmoK',
+    'vertetim_pediatrik_arta.pdf',
+    192400,
+    'pending_review',
+    'Lëshuar nga Klinika Pediatrike Prishtinë. / Issued by pediatrician.',
+    '2027-04-15',
+    'u-parent',
+    null,
+    null,
+    null,
+    now,
+    now,
+  )
 }

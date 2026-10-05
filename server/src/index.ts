@@ -3,7 +3,7 @@ import cors from 'cors'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
-import { db, type DbUser } from './db.js'
+import { db, localCalendarDate, type DbUser } from './db.js'
 import { requireAuth, signToken, type AuthUser } from './auth.js'
 
 export const app = express()
@@ -1806,7 +1806,7 @@ app.get('/api/staff-shifts', requireAuth, (req, res) => {
   const user = authed(req)
   const targetDate = req.query.date && typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)
     ? req.query.date
-    : new Date().toISOString().slice(0, 10)
+    : localCalendarDate()
 
   // 1. Fetch shifts
   let shiftsQuery = `
@@ -2165,6 +2165,197 @@ app.delete('/api/children/:childId/milestones/:milestoneId', requireAuth, (req, 
   )
   res.json({ success: true })
 })
+
+// --- School Document Hub & Digital Enrollment Contracts ---
+
+const uploadDocSchema = z.object({
+  childId: z.string().trim().min(1),
+  documentType: z.enum(['enrollment_contract', 'vaccination_record', 'birth_certificate', 'medical_clearance', 'custody_legal', 'other']),
+  title: z.string().trim().min(1).max(200),
+  fileUrl: z.string().trim().min(1),
+  fileName: z.string().trim().min(1).max(255),
+  fileSizeBytes: z.number().int().nonnegative().max(5 * 1024 * 1024).optional().default(0),
+  notes: z.string().trim().max(1000).optional().default(''),
+  expirationDate: calendarDate.nullable().optional(),
+}).strict()
+
+const verifyDocSchema = z.object({
+  status: z.enum(['verified', 'rejected']),
+  rejectionReason: z.string().trim().max(500).optional(),
+}).strict()
+
+const docSelectFields = `
+  SELECT d.id, d.child_id AS childId, c.name AS childName, c.group_name AS groupName,
+         d.document_type AS documentType, d.title, d.file_url AS fileUrl, d.file_name AS fileName,
+         d.file_size_bytes AS fileSizeBytes, d.status, d.notes, d.expiration_date AS expirationDate,
+         d.uploaded_by AS uploadedBy, u1.name AS uploadedByName,
+         d.verified_by AS verifiedBy, u2.name AS verifiedByName, d.verified_at AS verifiedAt,
+         d.rejection_reason AS rejectionReason, d.created_at AS createdAt, d.updated_at AS updatedAt
+  FROM child_documents d
+  JOIN children c ON c.id = d.child_id
+  JOIN users u1 ON u1.id = d.uploaded_by
+  LEFT JOIN users u2 ON u2.id = d.verified_by
+`
+
+app.get('/api/documents', requireAuth, (req, res) => {
+  const user = authed(req)
+  const childIdFilter = typeof req.query.childId === 'string' ? req.query.childId.trim() : null
+  const statusFilter = typeof req.query.status === 'string' ? req.query.status.trim() : null
+  const typeFilter = typeof req.query.type === 'string' ? req.query.type.trim() : null
+
+  let conditions: string[] = []
+  let params: any[] = []
+
+  if (user.role === 'parent') {
+    conditions.push('c.parent_user_id = ?')
+    params.push(user.id)
+  }
+
+  if (childIdFilter) {
+    conditions.push('d.child_id = ?')
+    params.push(childIdFilter)
+  }
+
+  if (statusFilter) {
+    conditions.push('d.status = ?')
+    params.push(statusFilter)
+  }
+
+  if (typeFilter) {
+    conditions.push('d.document_type = ?')
+    params.push(typeFilter)
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+  const rows = db.prepare(`${docSelectFields} ${whereClause} ORDER BY d.created_at DESC`).all(...params)
+
+  // Overall summary statistics
+  const summaryScopeWhere = user.role === 'parent' ? 'WHERE c.parent_user_id = ?' : ''
+  const summaryParams = user.role === 'parent' ? [user.id] : []
+  const counts = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN d.status = 'verified' THEN 1 ELSE 0 END) AS verified,
+      SUM(CASE WHEN d.status = 'pending_review' THEN 1 ELSE 0 END) AS pendingReview,
+      SUM(CASE WHEN d.status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+      SUM(CASE WHEN d.status = 'expired' THEN 1 ELSE 0 END) AS expired
+    FROM child_documents d
+    JOIN children c ON c.id = d.child_id
+    ${summaryScopeWhere}
+  `).get(...summaryParams) as any
+
+  res.json({
+    documents: rows,
+    summary: {
+      total: counts.total || 0,
+      verified: counts.verified || 0,
+      pendingReview: counts.pendingReview || 0,
+      rejected: counts.rejected || 0,
+      expired: counts.expired || 0,
+    },
+  })
+})
+
+app.post('/api/documents', requireAuth, (req, res) => {
+  const user = authed(req)
+  const parsed = uploadDocSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
+
+  const child = db.prepare('SELECT id, parent_user_id AS parentUserId FROM children WHERE id = ?').get(parsed.data.childId) as any
+  if (!child) return res.status(404).json({ error: 'child_not_found' })
+
+  if (user.role === 'parent' && child.parentUserId !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const id = `doc-${randomUUID().slice(0, 8)}`
+  const now = new Date().toISOString()
+  const initialStatus = user.role === 'director' ? 'verified' : 'pending_review'
+  const verifiedBy = user.role === 'director' ? user.id : null
+  const verifiedAt = user.role === 'director' ? now : null
+
+  db.prepare(`
+    INSERT INTO child_documents (id, child_id, document_type, title, file_url, file_name, file_size_bytes, status, notes, expiration_date, uploaded_by, verified_by, verified_at, rejection_reason, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    parsed.data.childId,
+    parsed.data.documentType,
+    parsed.data.title,
+    parsed.data.fileUrl,
+    parsed.data.fileName,
+    parsed.data.fileSizeBytes,
+    initialStatus,
+    parsed.data.notes,
+    parsed.data.expirationDate || null,
+    user.id,
+    verifiedBy,
+    verifiedAt,
+    null,
+    now,
+    now,
+  )
+
+  const created = db.prepare(`${docSelectFields} WHERE d.id = ?`).get(id)
+  res.status(201).json({ success: true, document: created })
+})
+
+app.put('/api/documents/:id/verify', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const existing = db.prepare('SELECT id FROM child_documents WHERE id = ?').get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'not_found' })
+
+  const parsed = verifyDocSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
+
+  const now = new Date().toISOString()
+  const verifiedBy = parsed.data.status === 'verified' ? user.id : null
+  const verifiedAt = parsed.data.status === 'verified' ? now : null
+  const rejectionReason = parsed.data.status === 'rejected' ? (parsed.data.rejectionReason || 'Document rejected') : null
+
+  db.prepare(`
+    UPDATE child_documents
+    SET status = ?, verified_by = ?, verified_at = ?, rejection_reason = ?, updated_at = ?
+    WHERE id = ?
+  `).run(
+    parsed.data.status,
+    verifiedBy,
+    verifiedAt,
+    rejectionReason,
+    now,
+    req.params.id,
+  )
+
+  const updated = db.prepare(`${docSelectFields} WHERE d.id = ?`).get(req.params.id)
+  res.json({ success: true, document: updated })
+})
+
+app.delete('/api/documents/:id', requireAuth, (req, res) => {
+  const user = authed(req)
+  const existing = db.prepare(`
+    SELECT d.id, d.uploaded_by, d.status, c.parent_user_id
+    FROM child_documents d
+    JOIN children c ON c.id = d.child_id
+    WHERE d.id = ?
+  `).get(req.params.id) as any
+
+  if (!existing) return res.status(404).json({ error: 'not_found' })
+
+  if (user.role === 'parent') {
+    if (existing.parent_user_id !== user.id) return res.status(403).json({ error: 'forbidden' })
+    if (existing.status === 'verified') return res.status(400).json({ error: 'cannot_delete_verified_document' })
+  } else if (user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  db.prepare('DELETE FROM child_documents WHERE id = ?').run(req.params.id)
+  res.json({ success: true })
+})
+
 
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const parsed = z.object({ date: calendarDate }).strict().safeParse(req.query)

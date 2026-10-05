@@ -168,7 +168,8 @@ async function run() {
     ['meals', translations.en.navMeals], ['messages', translations.en.navMessages],
     ['announcements', translations.en.navAnnouncements], ['moments', translations.en.navMoments],
     ['events', translations.en.navEvents], ['children', translations.en.childrenTitle],
-    ['payments', translations.en.navPayments], ['absences', translations.en.navAbsences],
+    ['payments', translations.en.navPayments], ['documents', translations.en.navDocuments],
+    ['absences', translations.en.navAbsences],
     ['incidents', translations.en.navIncidents], ['milestones', translations.en.navMilestones],
     ['staff', translations.en.navStaffShifts],
   ])
@@ -176,7 +177,7 @@ async function run() {
   assert(sidebarPages.length === expectedPages.size && sidebarPages.every((element) => element.querySelector('span:last-child')?.textContent === expectedPages.get(element.dataset.view!)), 'sidebar identifies all working Kidoland destinations with their own labels')
   assert(new Set(sidebarPages.map((element) => element.dataset.view)).size === expectedPages.size && sidebarPages.slice(0, 5).map((element) => element.dataset.view).join('|') === 'dashboard|attendance|reports|program|meals' && sidebarPages.at(-1)?.dataset.view === 'children', 'sidebar has unique destinations, daily care first, and the child directory in the bottom section')
   assert(document.querySelector('.sidebar-search')!.textContent?.includes(translations.en.searchPages) && !/My Kimi|New chat|New project|Projects|Chats/.test(document.querySelector('.sidebar')!.textContent!), 'sidebar search describes its action and has no copied product names')
-  assert(document.querySelectorAll('.sidebar button[data-view] .kimi-icon svg').length === 15, 'each Kidoland destination keeps the reference SVG icon treatment')
+  assert(document.querySelectorAll('.sidebar button[data-view] .kimi-icon svg').length === 16, 'each Kidoland destination keeps the reference SVG icon treatment')
   await openSidebar()
   const morePages = document.querySelector<HTMLButtonElement>('.kimi-more')!
   const moreSection = document.getElementById(morePages.getAttribute('aria-controls')!)!
@@ -287,7 +288,7 @@ async function run() {
     ['dashboard', 'navDashboard'], ['attendance', 'attendanceTitle'], ['reports', 'navReports'],
     ['program', 'navProgram'], ['meals', 'navMeals'], ['messages', 'navMessages'],
     ['announcements', 'navAnnouncements'], ['moments', 'navMoments'], ['events', 'navEvents'],
-    ['children', 'childrenTitle'], ['payments', 'navPayments'], ['absences', 'navAbsences'],
+    ['children', 'childrenTitle'], ['payments', 'navPayments'], ['documents', 'navDocuments'], ['absences', 'navAbsences'],
     ['incidents', 'navIncidents'], ['milestones', 'navMilestones'], ['staff', 'navStaffShifts'],
   ] as const)
   await openSidebar()
@@ -408,6 +409,11 @@ async function run() {
   assert(main().textContent?.includes(translations.en.overallProgress), 'director navigates to developmental milestones and views progress summary'); fit('milestones panel'); await capture('milestones')
   assert(Boolean(main().querySelector('.milestone-card')), 'director sees early childhood milestone cards')
   assert(main().textContent?.includes(translations.en.badgeMastered), 'director sees mastered milestone badge')
+  await nav(translations.en.navDocuments); await until(() => main().textContent?.includes(translations.en.documentsTitle))
+  await until(() => main().querySelector('.doc-card'))
+  assert(main().textContent?.includes(translations.en.statTotalDocs), 'director navigates to documents hub and views summary stats'); fit('documents hub')
+  assert(Boolean(main().querySelector('.doc-card')), 'director sees seeded student document cards')
+  assert(main().textContent?.includes(translations.en.statusVerified), 'director views verified status badges on child documents')
   await nav(translations.en.childrenTitle); await until(() => main().querySelector('.roster-card'))
   assert([...main().querySelectorAll('.roster-card')].find((card) => card.textContent?.includes('Browser Child'))?.textContent?.includes(translations.en.allowed) && !main().querySelector('input[type=radio]'), 'staff reads persisted photo permission without consent controls')
   await nav(translations.en.navPayments); await until(() => main().querySelector('.roster-card'))

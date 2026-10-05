@@ -911,3 +911,77 @@ export async function resetChildMilestone(token: string, childId: string, milest
     method: 'DELETE',
   }, token)
 }
+
+export type DocumentType = 'enrollment_contract' | 'vaccination_record' | 'birth_certificate' | 'medical_clearance' | 'custody_legal' | 'other'
+export type DocumentStatus = 'pending_review' | 'verified' | 'rejected' | 'expired'
+
+export type ChildDocument = {
+  id: string
+  childId: string
+  childName: string
+  groupName: string
+  documentType: DocumentType
+  title: string
+  fileUrl: string
+  fileName: string
+  fileSizeBytes: number
+  status: DocumentStatus
+  notes: string
+  expirationDate: string | null
+  uploadedBy: string
+  uploadedByName: string
+  verifiedBy: string | null
+  verifiedByName: string | null
+  verifiedAt: string | null
+  rejectionReason: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DocumentSummaryStats = {
+  total: number
+  verified: number
+  pendingReview: number
+  rejected: number
+  expired: number
+}
+
+export type UploadDocumentInput = {
+  childId: string
+  documentType: DocumentType
+  title: string
+  fileUrl: string
+  fileName: string
+  fileSizeBytes?: number
+  notes?: string
+  expirationDate?: string | null
+}
+
+export async function listDocuments(token: string, filters?: { childId?: string; status?: string; type?: string }, signal?: AbortSignal) {
+  const query = new URLSearchParams()
+  if (filters?.childId) query.set('childId', filters.childId)
+  if (filters?.status) query.set('status', filters.status)
+  if (filters?.type) query.set('type', filters.type)
+  const qs = query.toString() ? `?${query}` : ''
+  return api<{ documents: ChildDocument[]; summary: DocumentSummaryStats }>(`/api/documents${qs}`, { signal }, token)
+}
+
+export async function uploadDocument(token: string, input: UploadDocumentInput) {
+  return api<{ success: boolean; document: ChildDocument }>('/api/documents', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function verifyDocument(token: string, id: string, status: 'verified' | 'rejected', rejectionReason?: string) {
+  return api<{ success: boolean; document: ChildDocument }>(`/api/documents/${id}/verify`, {
+    method: 'PUT',
+    body: JSON.stringify({ status, rejectionReason }),
+  }, token)
+}
+
+export async function deleteDocument(token: string, id: string) {
+  return api<{ success: boolean }>(`/api/documents/${id}`, {
+    method: 'DELETE',
+  }, token)
+}

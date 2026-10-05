@@ -1153,3 +1153,65 @@ test('early childhood milestones and developmental assessment tracker (EYFS)', a
     await f.dispose()
   }
 })
+
+test('school document hub and digital enrollment contracts', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const director = await f.login('director')
+    const parent = await f.login('parent')
+
+    // 1. Director views documents
+    const dirDocs = await request('documents', director)
+    assert.equal(dirDocs.status, 200)
+    assert.ok(Array.isArray(dirDocs.data.documents))
+    assert.ok(dirDocs.data.documents.length >= 3)
+    assert.ok(dirDocs.data.summary.total >= 3)
+    assert.ok(dirDocs.data.summary.verified >= 2)
+
+    // 2. Parent views only their linked child documents
+    const parentDocs = await request('documents', parent)
+    assert.equal(parentDocs.status, 200)
+    assert.ok(parentDocs.data.documents.every((d: any) => d.childName.includes('Arta')))
+
+    // 3. Parent uploads birth certificate
+    const uploadRes = await request('documents', parent, {
+      childId: 'c-arta',
+      documentType: 'birth_certificate',
+      title: 'Certifikata e Lindjes / Official Birth Certificate',
+      fileUrl: 'data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp/Og0MTGCjQgMCBvYmoKPDwgL0xlbmd0aCA1IDAgUiAvRmlsdGVyIC9GbGF0ZURlY29kZSA+PgpzdHJlYW0KeJzLSM3JyVcozy/KSVECAB6mBIEKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjE4CmVuZG9iagoxIDAgb2JqCjw8IC9UeXBlIC9DYXRhbG9nIC9QYWdlcyAyIDAgUiA+PgplbmRvYmoK',
+      fileName: 'certifikata_lindjes_arta.pdf',
+      fileSizeBytes: 120500,
+      notes: 'Lëshuar nga komuna Prishtinë',
+    })
+    assert.equal(uploadRes.status, 201)
+    const docId = uploadRes.data.document.id
+    assert.equal(uploadRes.data.document.status, 'pending_review')
+
+    // 4. Parent cannot verify document
+    const parentForbiddenVerify = await request(`documents/${docId}/verify`, parent, {
+      status: 'verified',
+    }, 'PUT')
+    assert.equal(parentForbiddenVerify.status, 403)
+
+    // 5. Director verifies document
+    const verifyRes = await request(`documents/${docId}/verify`, director, {
+      status: 'verified',
+    }, 'PUT')
+    assert.equal(verifyRes.status, 200)
+    assert.equal(verifyRes.data.document.status, 'verified')
+    assert.ok(verifyRes.data.document.verifiedBy)
+
+    // 6. Parent cannot delete verified document
+    const parentDeleteFail = await request(`documents/${docId}`, parent, undefined, 'DELETE')
+    assert.equal(parentDeleteFail.status, 400)
+
+    // 7. Director can delete document
+    const dirDelete = await request(`documents/${docId}`, director, undefined, 'DELETE')
+    assert.equal(dirDelete.status, 200)
+    assert.equal(dirDelete.data.success, true)
+  } finally {
+    await f.dispose()
+  }
+})

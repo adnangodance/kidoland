@@ -9,7 +9,7 @@ import { euro } from './pilot-utils'
 import ChildAvatar from './ChildAvatar'
 import Icon, { type IconName } from './Icon'
 
-type Destination = 'attendance' | 'reports' | 'payments' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones'
+type Destination = 'attendance' | 'reports' | 'payments' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents'
 
 function PlaygroundArt() {
   return <svg className="playground-art" viewBox="0 0 320 210" fill="none" aria-hidden="true" focusable="false">

@@ -22,12 +22,13 @@ import Icon, { BrandMark, type IconName } from './Icon'
 import KimiIcon from './KimiIcon'
 import KimiNavigation from './KimiNavigation'
 import PageFinder from './PageFinder'
+import { Documents } from './Documents'
 import './App.css'
 import './theme.css'
 import './Sidebar.css'
 import './Kindergarten.css'
 
-type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones'
+type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents'
 
 const DEMO = [
   { email: 'parent@kidoland.demo', password: 'parent123', roleKey: 'roleParent' as const },
@@ -68,6 +69,7 @@ function Shell() {
     { label: t.navManagement, items: [
       { view: 'children', label: user?.role === 'parent' ? t.consentTitle : t.childrenTitle, icon: 'children' },
       { view: 'payments', label: t.navPayments, icon: 'payments' },
+      { view: 'documents', label: t.navDocuments, icon: 'documents' },
       { view: 'absences', label: t.navAbsences, icon: 'absences' },
       { view: 'incidents', label: t.navIncidents, icon: 'incidents' },
       { view: 'milestones', label: t.navMilestones, icon: 'milestones' },
@@ -165,6 +167,7 @@ function Shell() {
         {user && activeView === 'events' && <Events />}
         {user && activeView === 'staff' && <StaffShifts />}
         {user && activeView === 'milestones' && <Milestones />}
+        {user && activeView === 'documents' && <Documents />}
         {user && activeView === 'children' && <Children />}
       </main>
       <footer className="footer"><span className="footer-mark" aria-hidden="true"><Icon name="leaf" size={15} /></span><p>{t.footer}</p></footer>
