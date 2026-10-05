@@ -138,7 +138,7 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
     return tokens.map((code) => { const option = all.find(([id]) => id === code)!; return t[option[1]] }).join(' · ')
 
   }
-  return <section className="panel"><h1>{t.reportsTitle}</h1>
+  return <section className="panel reports-panel"><h1>{t.reportsTitle}</h1><p className="panel-sub">{t.reportsDescription}</p>
     <div className="filters"><label>{t.paymentsChild}<select disabled={busy || !rosterReady} value={childId} onChange={(e) => changeContext(e.target.value, date)}>{children.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.groupName}</option>)}</select></label>
     <label>{t.attendanceDate}<input type="date" disabled={busy} value={date} onChange={(e) => changeContext(childId, e.target.value)} /></label><button className="btn ghost" disabled={busy} onClick={() => { if (date !== localCalendarDate()) changeContext(childId, localCalendarDate()) }}>{t.attendanceToday}</button></div>
     {selectedChild?.allergies && <div className="allergy-alert" role="status">⚠️ <strong>{t.allergies}:</strong> {selectedChild.allergies}</div>}
@@ -148,11 +148,12 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
     {saved && <p role="status">{t.attendanceSaved}</p>}
     {batchSaved && <p role="status" className="attendance-feedback">✓ {t.batchSuccess}</p>}
     {rosterReady && !children.length && <p>{t.attendanceEmpty}</p>}
-    {canWrite && childId && !loading && !rosterError && error !== 'load' && validDate(date) && <form className="login-form" onSubmit={save}>
+    {canWrite && childId && !loading && !rosterError && error !== 'load' && validDate(date) && <form className="login-form report-form" onSubmit={save}>
+      <h2 className="form-section-title">{t.reportDetails}</h2>
       {reports.length > 0 && <p>{t.reportCorrection}</p>}
       <fieldset disabled={busy}>
-        {(['mood', 'meals', 'nap'] as const).map((field) => <label key={field}>{t[({ mood: 'reportsMood', meals: 'reportsMeals', nap: 'reportsNap' } as const)[field]]}<select required value={draft[field]} onChange={(e) => { setSaved(false); setDraft({ ...draft, [field]: e.target.value }) }}><option value="">{t.choose}</option>{draft[field] && !options[field].some(([code]) => code === draft[field]) && <option value={draft[field]}>{translated(draft[field])}</option>}{options[field].map(([code, key]) => <option key={code} value={code}>{t[key]}</option>)}</select></label>)}
-        <fieldset><legend>{t.reportsActivities}</legend>
+        <div className="report-basics">{(['mood', 'meals', 'nap'] as const).map((field) => <label key={field}>{t[({ mood: 'reportsMood', meals: 'reportsMeals', nap: 'reportsNap' } as const)[field]]}<select required value={draft[field]} onChange={(e) => { setSaved(false); setDraft({ ...draft, [field]: e.target.value }) }}><option value="">{t.choose}</option>{draft[field] && !options[field].some(([code]) => code === draft[field]) && <option value={draft[field]}>{translated(draft[field])}</option>}{options[field].map(([code, key]) => <option key={code} value={code}>{t[key]}</option>)}</select></label>)}</div>
+        <fieldset className="report-activities"><legend>{t.reportsActivities}</legend>
           {draft.activities && draft.activities.split('|').some((code) => !options.activities.some(([id]) => id === code))
             ? <><label>{t.reportsActivities}<input value={draft.activities} onChange={(e) => { setSaved(false); setDraft({ ...draft, activities: e.target.value }) }} /></label><button type="button" className="btn ghost" onClick={() => { setSaved(false); setDraft({ ...draft, activities: '' }) }}>{t.useChecklist}</button></>
             : options.activities.map(([code, key]) => <label className="choice" key={code}><input type="checkbox" checked={draft.activities.split('|').includes(code)} onChange={(e) => { const chosen = draft.activities.split('|').filter(Boolean); setSaved(false); setDraft({ ...draft, activities: e.target.checked ? [...chosen, code].join('|') : chosen.filter((v) => v !== code).join('|') }) }} />{t[key]}</label>)}

@@ -1,12 +1,12 @@
-# Kidoland pilot UX guidance
+# Kidoland UI and UX guidance
 
-**Owner:** Sally, BMAD UX Designer · **Date:** 2026-10-01
+**Updated:** 2026-10-05
 **Purpose:** implementation guidance for the existing single-school, SQ/EN web app.
 **Sources:** [MVP PRD](kidoland-prd-v1.md), [approved attendance boundaries](../_bmad-output/implementation-artifacts/spec-daily-attendance.md), [brainstorm](../_bmad-output/brainstorming/.memlog.md), and `src/App.tsx`, `src/App.css`, `src/i18n/translations.ts`. The attendance spec wins on scope or behavior conflicts. Consent and management rules below are explicit implementation recommendations for the following features, rather than already implemented behavior.
 
 ## Experience and visual hierarchy
 
-Keep the existing forest green primary actions, warm cream page, white panels, system type, and rounded controls. Use one clear page title, a short description, then the task controls and records. Child name is the first item in every child card; group and date follow. Use written status labels alongside color. Avoid photos as decoration: the pilot has a consent flag, not a photo sharing system.
+Use forest green primary actions, warm cream page backgrounds, white record cards, and a consistent set of outline icons. The shared design system lives in `src/theme.css`; module layouts remain in `src/App.css`, and icons live in `src/Icon.tsx`. Use one clear page title, a short description, then the task controls and records. Main screens occupy the available workspace instead of placing the whole page inside a narrow card. Reserve cards for related records, forms, summaries, and actions. Child name is the first item in every child card; group and date follow. Use written status labels alongside color. Avoid photos as decoration: the pilot has a consent flag, not a photo sharing system.
 
 Keep each action beside the record it affects. Attendance saves immediately per child; reports and consent use an explicit Save action. Show success only after the server confirms the result. Do not advertise card payment, enrollment, classroom management, or offline sync until available. Describe pilot payments as invoices and recorded payments.
 
@@ -14,7 +14,7 @@ Keep each action beside the record it affects. Attendance saves immediately per 
 
 After login, open the role dashboard. Keep Dashboard, Attendance, Reports, and Payments reachable for every role; add Children for director management and Photo consent for parents when those features ship. Staff can inspect consent in child details. Mark the current destination visually and with `aria-current="page"`.
 
-At phone widths, the navigation must remain visible: wrap labeled links into a full-width second header row or two-column grid. Do not hide it below 800px as the current UI does. Keep brand, language switch, and logout in the first row with wrapping when required; no horizontal scrolling. Full labels are preferable to unexplained icons.
+On desktop, use a persistent 236px sidebar grouped into Daily care, Family & community, and Care & management. The header shows the active screen, language switch, account identity, and logout. At widths of 900px or less, a labeled navigation toggle opens the grouped links; choosing a destination closes it and focuses the page heading. Opening the menu moves keyboard focus to the active link. Escape closes the menu and returns focus to the toggle. At phone widths, expanded links use two columns. Keep all destinations available to the existing roles, with written labels alongside icons. Language and logout remain available in the header, with no horizontal scrolling.
 
 | Role | Dashboard order | Primary action | Other useful destinations |
 | --- | --- | --- | --- |
@@ -22,12 +22,12 @@ At phone widths, the navigation must remain visible: wrap labeled links into a f
 | Parent | Linked child cards → today's attendance/report → unpaid invoices | View today's report | Attendance history; invoices; photo consent |
 | Director | Today's attendance → report completion → unpaid invoices | Review attendance | Children/parent links; invoices; reports |
 
-Attendance counts must include **unmarked** separately: present + absent + unmarked = roster size. Report completion counts distinct children with a saved report for the selected day, rather than all report records. If data is loading or unavailable, display that state instead of zero. Keep summaries simple; no live occupancy, room capacity, reminders, or projected analytics. Dashboard links should open the named working screen.
+Attendance counts must include **unmarked** separately: present + absent + unmarked = roster size. Report completion counts distinct children with a saved report for the selected day, rather than all report records. If data is loading or unavailable, display that state instead of zero. Keep summaries simple; no live occupancy, room capacity, reminders, or projected analytics. Dashboard links should open the named working screen and carry the selected date. Show six real-data metrics, attendance and report progress for staff, and child-specific status cards for parents. Keep three primary shortcuts for attendance, reports, and payments; the sidebar provides the remaining destinations. A count or balance only appears after a successful API response. Decorative welcome artwork never implies a live record.
 
 ## Attendance: fast, explicit, correctable
 
 1. Teacher opens Attendance on a phone. A labeled date input defaults to the browser's **local calendar date**; a Today button restores it. Accept any real calendar date supported by the approved spec; do not silently prohibit past or future dates.
-2. Show children with group names in stable name order. Each row/card has name, group, saved status, and two staff buttons: Present and Absent. A missing entry reads Unmarked. It must never appear absent or count as absent.
+2. Show children with group names in stable name order. Provide a local child/group search and present, absent, and unmarked summary counts for the complete loaded roster. Search filters visible rows without changing saved records or counts; no matches offers Clear search. Each row/card has name, group, saved status, and two staff buttons: Present and Absent. A missing entry reads Unmarked. It must never appear absent or count as absent.
 3. Tapping a status saves just that child/date. Indicate the pending choice as Saving; disable conflicting attendance actions while the save is pending. Keep the last confirmed status distinguishable from the pending request.
 4. Success updates the saved label and selected button. Corrections use the same buttons and update the same entry. No confirmation dialog or batch action is needed.
 5. Failure retains the last confirmed status and shows an inline error with Retry. Retry repeats the attempted child/date/status only while that context is still current. The user can also choose the status again.
@@ -51,7 +51,7 @@ Use a small labeled form with Save and Cancel, field-level required errors, and 
 
 ## Reports and invoice detail
 
-Reports: staff choose child and local date first, then mood, meals, nap, activities, and optional note. Keep frequently used answers short and selectable where supported, with free text for nuance. A saved report clearly identifies child/date and gives a success message before clearing its fields. Parent cards prioritize mood, meals, nap, then activities/note. “No report for this day” must remain distinct from a failed load. Translate labels and preset options; preserve teachers' free text exactly as authored.
+Reports: staff choose child and local date first, then mood, meals, nap, activities, and optional note. Keep frequently used answers short and selectable where supported, with free text for nuance. A saved report clearly identifies child/date and gives a success message before clearing its fields. Parent cards prioritize mood, meals, nap, then activities/note. “No report for this day” must remain distinct from a failed load. Translate labels and preset options; preserve teachers' free text exactly as authored. On desktop, mood, meals, and nap selectors share a row, with activities in a separate checklist section; on phones these fields stack.
 
 Invoices: each invoice shows child, billing period, due date, fee descriptions/amounts, total, and Pending/Paid. Fee line totals must equal the invoice total; display the currency consistently. A director creates line items with labeled description and amount fields and explicit Add fee / Remove fee controls; preserve entered lines on validation failure. Parent sees a readable breakdown before any payment-status action. Keep the current staff ability to record payment; parents have no Mark paid control. Do not offer Pay now without a working payment route. Label old invoices without itemization honestly rather than inventing historical fees.
 
@@ -93,3 +93,11 @@ These labels are a starting dictionary, not permission to leave unlisted states 
 - Announce loading/saving/success with a restrained polite live region; announce actionable errors with an alert. Associate field errors with inputs. Avoid moving focus on save or re-rendering the focused row with a new key.
 - After navigation, focus the page heading or main region. Keep keyboard order consistent with visual order. No animation is needed; any later transitions should respect reduced motion.
 - Check keyboard use, 200% zoom, 320px and desktop, SQ/EN, long names, multiple linked children, no children, loading/failure/retry, date changes during requests, and account changes. Verify every role's actual controls and empty states.
+
+## Public welcome and sign-in
+
+Use locally rendered garden artwork to introduce the app, with an explicitly labeled example report rather than fabricated live metrics. Describe working features and offer the existing sign-in route. The sign-in screen pairs a quiet introduction with a clearly labeled form; mobile shows the form directly. Provide an accessible show/hide password control and prevent demo-account changes during a pending login. Demo role cards fill credentials without signing in automatically.
+
+## Redesign verification
+
+The browser regression suite exercises real app workflows against an ephemeral database at 320px, including bilingual drafts, mobile navigation open/close and Escape focus, attendance search, report correction, invoice retries, messaging, consent, receipts, and session changes. Visual layout audits also inspect all 15 screens for each role in English and Albanian at 1440px, 768px, 390px, and 320px. Respect reduced motion, native control semantics, visible keyboard focus, and the existing authorization rules.

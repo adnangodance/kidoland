@@ -44,29 +44,52 @@ window.fetch = async (input, options) => {
 }
 const resumed = sessionStorage.getItem('kidoland.test-resume')
 if (!resumed) { localStorage.clear(); localStorage.setItem('kidoland.language', 'en') }
+let checkedPasswordToggle = false
 let root = createRoot(document.getElementById('root')!)
 root.render(<App />)
 function assert(condition: unknown, label: string) { if (!condition) throw new Error(label); results.push(`PASS: ${label}`); output.textContent = results.join('\n') }
 async function until(check: () => unknown, label = 'UI state') { const deadline = Date.now() + 7000; while (!check()) { if (Date.now() > deadline) throw new Error(`Timed out: ${label}; ${document.querySelector('main')?.textContent}`); await new Promise((resolve) => setTimeout(resolve, 10)) } }
 const main = () => document.querySelector('main') || document.getElementById('root')!
-function button(text: string, scope: ParentNode = document) { const found = [...scope.querySelectorAll<HTMLButtonElement>('button')].find((element) => element.textContent?.trim() === text); if (!found) throw new Error(`Button missing: ${text}`); found.click() }
+function button(text: string, scope: ParentNode = document) { const found = [...scope.querySelectorAll<HTMLButtonElement>('button')].find((element) => element.textContent?.trim() === text || element.getAttribute('aria-label') === text); if (!found) throw new Error(`Button missing: ${text}`); found.click() }
 function fill(element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, value: string) { const proto = element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(element, value); element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true })) }
 function field(label: string, scope: ParentNode = main()) { const found = [...scope.querySelectorAll('label')].find((element) => element.childNodes[0]?.textContent?.trim() === label)?.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input,select,textarea'); if (!found) throw new Error(`Field missing: ${label}`); return found }
 async function set(label: string, value: string, scope?: ParentNode) { fill(field(label, scope), value); await new Promise((resolve) => setTimeout(resolve, 10)) }
-async function nav(text: string) { button(text, document.querySelector('nav')!); await until(() => main().querySelector('h1')); await new Promise((resolve) => setTimeout(resolve, 50)) }
+async function nav(text: string) {
+  const toggle = document.querySelector<HTMLButtonElement>('.menu-toggle')
+  if (toggle && toggle.getBoundingClientRect().height > 0 && toggle.getAttribute('aria-expanded') !== 'true') {
+    toggle.click(); await until(() => toggle.getAttribute('aria-expanded') === 'true')
+  }
+  button(text, document.querySelector('nav')!)
+  await until(() => main().querySelector('h1'))
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  if (toggle && toggle.getBoundingClientRect().height > 0) assert(toggle.getAttribute('aria-expanded') === 'false', 'mobile navigation closes after choosing a destination')
+}
 async function login(role: string, email = `${role}@kidoland.demo`, password = `${role}123`) {
   if (!main().querySelector('input[type=email]')) button(translations.en.ctaStart)
   await until(() => main().querySelector('input[type=email]'))
-  await set(translations.en.loginEmail, email); await set(translations.en.loginPassword, password); button(translations.en.loginSubmit, main())
+  await set(translations.en.loginEmail, email); await set(translations.en.loginPassword, password)
+  if (!checkedPasswordToggle) {
+    button(translations.en.showPassword, main()); await until(() => field(translations.en.loginPassword).getAttribute('type') === 'text')
+    assert(field(translations.en.loginPassword).value === password, 'show password preserves entered credentials')
+    button(translations.en.hidePassword, main()); await until(() => field(translations.en.loginPassword).getAttribute('type') === 'password')
+    checkedPasswordToggle = true
+  }
+  button(translations.en.loginSubmit, main())
   await until(() => main().querySelector('.metrics'), `login ${role}`)
   assert(main().textContent?.includes(role === 'director' ? translations.en.dashDirector : role === 'teacher' ? translations.en.dashTeacher : translations.en.dashParent), `${role} login opens authorized dashboard`)
 }
 async function logout() { button(translations.en.logout); await until(() => !document.querySelector('nav [aria-current]')); assert(!main().querySelector('.roster-card, .attendance-row, .metrics'), 'logout removes account records immediately') }
-function fit(label: string) { assert(document.documentElement.scrollWidth <= window.innerWidth && [...document.querySelectorAll<HTMLElement>('nav button,input,select,textarea')].every((element) => { const box = element.getBoundingClientRect(); return box.width === 0 || box.right <= window.innerWidth + 1 && box.left >= -1 }), `${label}: navigation and controls fit ${window.innerWidth}px`); assert([...document.querySelectorAll<HTMLElement>('nav button')].every((element) => element.getBoundingClientRect().height >= 40), `${label}: mobile navigation remains visible and reachable`) }
+function fit(label: string) { const navigation = document.querySelector<HTMLElement>('.sidebar .nav-links'); if (navigation?.getBoundingClientRect().width) assert(navigation.scrollWidth <= navigation.clientWidth + 1, `${label}: navigation stays in a single sidebar column`); assert(document.documentElement.scrollWidth <= window.innerWidth && [...document.querySelectorAll<HTMLElement>('nav button,input,select,textarea')].every((element) => { const box = element.getBoundingClientRect(); return box.width === 0 || box.right <= window.innerWidth + 1 && box.left >= -1 }), `${label}: navigation and controls fit ${window.innerWidth}px`); assert([...document.querySelectorAll<HTMLElement>('nav button')].every((element) => element.getBoundingClientRect().height === 0 || element.getBoundingClientRect().height >= 40) && (!document.querySelector('.workspace') || [...document.querySelectorAll<HTMLElement>('.menu-toggle, nav button')].some((element) => element.getBoundingClientRect().height >= 40)), `${label}: navigation remains reachable through labeled links or menu`) }
 async function run() {
   if (!resumed) {
   await until(() => document.querySelector('.hero'))
   await login('director'); fit('director dashboard')
+  const mobileMenu = document.querySelector<HTMLButtonElement>('.menu-toggle')!
+  if (mobileMenu.getBoundingClientRect().height > 0) {
+    mobileMenu.click(); await until(() => mobileMenu.getAttribute('aria-expanded') === 'true'); fit('expanded mobile navigation')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); await until(() => mobileMenu.getAttribute('aria-expanded') === 'false')
+    assert(document.activeElement === mobileMenu, 'Escape closes mobile navigation and returns keyboard focus')
+  }
   await nav(translations.en.childrenTitle)
   await until(() => main().querySelector('.roster-card'))
   button(translations.en.newParent, main())
@@ -94,6 +117,12 @@ async function run() {
   assert(main().textContent?.includes(translations.en.transferWarning), 'parent transfer warning appears before save')
   await set(translations.en.linkedParent, family.value); button(translations.en.save, main()); await until(() => !main().querySelector('form'))
   await nav(translations.en.attendanceTitle); await until(() => main().querySelectorAll('.attendance-row').length === 3)
+  const search = main().querySelector<HTMLInputElement>('input[type=search]')!
+  fill(search, 'Browser Child'); await until(() => main().querySelectorAll('.attendance-row').length === 1)
+  assert(main().querySelector('.attendance-row')?.textContent?.includes('Browser Child'), 'attendance search isolates the requested child')
+  fill(search, 'no-matching-child'); await until(() => main().textContent?.includes(translations.en.noSearchResults))
+  button(translations.en.clearSearch, main()); await until(() => main().querySelectorAll('.attendance-row').length === 3)
+  assert(Boolean(main().querySelector('.attendance-summary')), 'clearing attendance search restores the roster and its saved counts')
   const row = [...main().querySelectorAll('.attendance-row')].find((element) => element.textContent?.includes('Browser Child'))!
   button(translations.en.attendancePresent, row); await until(() => row.querySelector('.attendance-status')?.textContent === translations.en.attendancePresent)
   button(translations.en.attendanceAbsent, row); await until(() => row.querySelector('.attendance-status')?.textContent === translations.en.attendanceAbsent)
@@ -278,6 +307,8 @@ async function run() {
   assert(main().textContent?.includes('180.00 EURO'), 'invalid legacy currency code uses readable number and raw label')
   await nav(translations.en.navMessages); await until(() => main().querySelector('.conversation-card'))
   assert(main().textContent?.includes('Water bottle & Spare clothes'), 'demo parent reads seeded conversation thread')
+  button(translations.en.viewConversation, main()); await until(() => main().querySelector('.chat-message-stream'))
+  assert(main().textContent?.includes('Water bottle & Spare clothes'), 'Open conversation action opens the named thread'); fit('seeded conversation')
   await logout()
   root.unmount(); localStorage.setItem('kidoland.language', 'sq'); root = createRoot(document.getElementById('root')!); root.render(<App />)
   await until(() => document.documentElement.lang === 'sq' && document.querySelector('.hero'))

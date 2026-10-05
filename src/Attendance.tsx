@@ -5,6 +5,7 @@ import { localCalendarDate, validDate } from './attendance-date'
 import { useAuth } from './auth-context'
 import { useI18n } from './i18n/language-context'
 import ChildAvatar from './ChildAvatar'
+import Icon from './Icon'
 
 type Attempt = { childId: string; status: AttendanceStatus }
 type Roster = { context: string; children: Child[]; entries: AttendanceEntry[]; state: 'ready' | 'loading' | 'error'; sessionExpired?: boolean }
@@ -14,6 +15,7 @@ export default function Attendance({ initialDate }: { initialDate?: string }) {
   const { t } = useI18n()
   const [date, setDate] = useState(() => initialDate || localCalendarDate())
   const [retry, setRetry] = useState(0)
+  const [search, setSearch] = useState('')
   const context = JSON.stringify([token, user?.id, date])
   const [requests] = useState(createAttendanceRequests)
   useLayoutEffect(() => { requests.invalidate() }, [context, requests])
@@ -83,6 +85,10 @@ export default function Attendance({ initialDate }: { initialDate?: string }) {
   const entries = new Map(currentRoster?.entries.map((entry) => [entry.childId, entry]))
   const statusLabel = (status?: AttendanceStatus) => status === 'present' ? t.attendancePresent : status === 'absent' ? t.attendanceAbsent : t.attendanceUnmarked
 
+  const matchingChildren = currentRoster?.children.filter((child) => `${child.name} ${child.groupName}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())) || []
+  const counts = { present: 0, absent: 0, unmarked: 0 }
+  currentRoster?.children.forEach((child) => { counts[entries.get(child.id)?.status || 'unmarked']++ })
+
   return (
     <section className="panel attendance-panel">
       <h1 ref={heading} tabIndex={-1}>{t.attendanceTitle}</h1>
@@ -102,8 +108,13 @@ export default function Attendance({ initialDate }: { initialDate?: string }) {
         <button type="button" className="btn ghost" onClick={() => { setRoster({ context, children: [], entries: [], state: 'loading' }); setRetry((value) => value + 1) }}>{t.attendanceRetry}</button>
       </div>}
       {ready && currentRoster.children.length === 0 && <p>{t.attendanceEmpty}</p>}
+      {ready && currentRoster.children.length > 0 && <>
+        <div className="attendance-summary" aria-label={t.attendanceOverview}>{(['present', 'absent', 'unmarked'] as const).map((status) => <span key={status}>{statusLabel(status === 'unmarked' ? undefined : status)}<strong>{counts[status]}</strong></span>)}</div>
+        <div className="roster-toolbar"><label className="search-field"><Icon name="search" /><input type="search" aria-label={t.searchChildren} placeholder={t.searchChildren} value={search} onChange={(event) => setSearch(event.target.value)} /></label><span>{matchingChildren.length} / {currentRoster.children.length} · {t.dashChildren}</span></div>
+        {matchingChildren.length === 0 && <div className="empty-hint"><p>{t.noSearchResults}</p><button className="btn ghost" onClick={() => setSearch('')}>{t.clearSearch}</button></div>}
+      </>}
       {ready && <ul className="attendance-roster">
-        {currentRoster.children.map((child) => {
+        {matchingChildren.map((child) => {
           const status = entries.get(child.id)?.status
           return <li key={child.id} className="attendance-row">
             <div className="attendance-identity"><ChildAvatar name={child.name} size={40} /><div><h2>{child.name}</h2><p>{t.attendanceGroup}: {child.groupName}</p></div>{child.allergies && <span className="allergy-badge">⚠️ {child.allergies}</span>}</div>

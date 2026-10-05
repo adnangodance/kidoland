@@ -174,7 +174,7 @@ export default function Payments() {
     }
   }
 
-  return <section className="panel">
+  return <section className="panel payments-panel">
     <h1>{t.paymentsTitle}</h1>
     <p>{t.paymentsNote}</p>
     {loading && <p role="status">{t.loading}</p>}
@@ -182,7 +182,7 @@ export default function Payments() {
     {(saved || paidSaved) && <p role="status">{t.attendanceSaved}</p>}
 
     {/* Staff Invoice Creator */}
-    {canCreate && !loading && error !== 'load' && children.length > 0 && <form className="login-form" onSubmit={create}>
+    {canCreate && !loading && error !== 'load' && children.length > 0 && <form className="login-form invoice-form" onSubmit={create}><h2 className="form-section-title">{t.paymentsCreate}</h2>
       <fieldset disabled={busy}>
         <label>{t.paymentsChild}<select required value={form.childId} onChange={(e) => { setSaved(false); setForm({ ...form, childId: e.target.value }) }}>{children.map((child) => <option key={child.id} value={child.id}>{child.name} · {child.groupName}</option>)}</select></label>
         <label>{t.paymentsPeriod}<input required maxLength={200} value={form.periodLabel} onChange={(e) => { setSaved(false); setForm({ ...form, periodLabel: e.target.value }) }} /></label>
@@ -192,7 +192,7 @@ export default function Payments() {
         <div className="fee-presets">
           <button type="button" className="btn ghost small-btn" onClick={() => addPresetFee(t.presetTuitionFee, '150.00')}>+ {t.tuition} (150€)</button>
           <button type="button" className="btn ghost small-btn" onClick={() => addPresetFee(t.presetMealsFee, '35.00')}>+ {t.reportsMeals} (35€)</button>
-          <button type="button" className="btn ghost small-btn" onClick={() => addPresetFee(t.presetMaterialsFee, '15.00')}>+ Art & Books (15€)</button>
+          <button type="button" className="btn ghost small-btn" onClick={() => addPresetFee(t.presetMaterialsFee, '15.00')}>+ {t.materialsFee} (15€)</button>
         </div>
 
         {items.map((item, index) => <fieldset key={item.id}><legend>{t.fee} {index + 1}</legend><label>{t.fee}<input required maxLength={200} value={item.description} onChange={(e) => { setSaved(false); setItems((rows) => rows.map((row) => row.id === item.id ? { ...row, description: e.target.value } : row)) }} /></label><label>{t.paymentsAmountLabel}<input required type="number" min="0.01" step="0.01" value={item.amount} onChange={(e) => { setSaved(false); setItems((rows) => rows.map((row) => row.id === item.id ? { ...row, amount: e.target.value } : row)) }} /></label><button type="button" className="btn ghost" disabled={items.length < 2} onClick={() => { setSaved(false); setItems((rows) => rows.filter((row) => row.id !== item.id)) }}>{t.removeFee} {index + 1}</button></fieldset>)}
@@ -207,7 +207,7 @@ export default function Payments() {
 
     {/* Invoices List */}
     {!loading && invoices.map((invoice) => (
-      <article className="roster-card" key={invoice.id}>
+      <article className="roster-card invoice-card" key={invoice.id}>
         <h2>{invoice.childName} · {invoice.periodLabel}</h2>
         <p>{t.paymentsDue}: {displayDate(invoice.dueDate, lang)}</p>
         <ul className="fee-list">

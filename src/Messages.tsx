@@ -360,7 +360,7 @@ export default function Messages() {
                         openConversation(conv)
                       }}
                     >
-                      {t.dashRead}
+                      {t.viewConversation}
                     </button>
                   </div>
                 </article>
