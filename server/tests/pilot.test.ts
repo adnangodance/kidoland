@@ -1285,3 +1285,120 @@ test('daily nap and sleep quality tracker', async () => {
     await f.dispose()
   }
 })
+
+test('medication administration, logs, and morning health check triage API', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const director = await f.login('director')
+    const teacher = await f.login('teacher')
+    const parent = await f.login('parent')
+    const d = new Date()
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+    // 1. Director fetches seeded medications
+    const dirMeds = await request('medications', director)
+    assert.equal(dirMeds.status, 200)
+    assert.ok(Array.isArray(dirMeds.data.medications))
+    assert.ok(dirMeds.data.medications.length >= 1)
+    const seededMed = dirMeds.data.medications.find((m: any) => m.medicationName.includes('Amoxicillin'))
+    assert.ok(seededMed, 'seeded Amoxicillin exists')
+    assert.equal(seededMed.status, 'active')
+
+    // 2. Parent reads their linked child medications
+    const parentMeds = await request('medications', parent)
+    assert.equal(parentMeds.status, 200)
+    assert.ok(parentMeds.data.medications.some((m: any) => m.id === seededMed.id))
+
+    // 3. Parent authorizes a new medication for Arta
+    const authRes = await request('medications', parent, {
+      childId: 'c-arta',
+      medicationName: 'Salbutamol Inhaler',
+      dosage: '2 puffs',
+      frequencySchedule: 'As needed for wheezing',
+      instructions: 'Use spacer chamber before outdoor physical play',
+      storageType: 'locked_box',
+      doctorName: 'Dr. Hana Shala',
+      prescriptionNumber: 'RX-9921',
+      startDate: today,
+      endDate: today,
+    })
+    assert.equal(authRes.status, 201)
+    const newMedId = authRes.data.medication.id
+    assert.equal(authRes.data.medication.medicationName, 'Salbutamol Inhaler')
+
+    // 4. Parent cannot administer medication (staff only)
+    const parentAdminFail = await request(`medications/${newMedId}/administer`, parent, {
+      dosageGiven: '2 puffs',
+      reaction: 'normal',
+    })
+    assert.equal(parentAdminFail.status, 403)
+
+    // 5. Teacher administers medication with witness
+    const adminRes = await request(`medications/${newMedId}/administer`, teacher, {
+      dosageGiven: '2 puffs',
+      reaction: 'normal',
+      witnessBy: 'u-director',
+      notes: 'Child felt better within 5 minutes',
+    })
+    assert.equal(adminRes.status, 201)
+    assert.equal(adminRes.data.log.dosageGiven, '2 puffs')
+    assert.equal(adminRes.data.log.reaction, 'normal')
+
+    // 6. Parent reads medication logs
+    const logRes = await request(`medications/${newMedId}/logs`, parent)
+    assert.equal(logRes.status, 200)
+    assert.ok(logRes.data.logs.length >= 1)
+    assert.equal(logRes.data.logs[0].dosageGiven, '2 puffs')
+
+    // 7. Parent updates medication status to completed
+    const updateRes = await request(`medications/${newMedId}`, parent, {
+      status: 'completed',
+    }, 'PUT')
+    assert.equal(updateRes.status, 200)
+    assert.equal(updateRes.data.medication.status, 'completed')
+
+    // 8. Cannot administer completed medication
+    const adminCompletedFail = await request(`medications/${newMedId}/administer`, teacher, {
+      dosageGiven: '2 puffs',
+      reaction: 'normal',
+    })
+    assert.equal(adminCompletedFail.status, 400)
+
+    // 9. Staff records daily morning health check triage
+    const checkRes = await request('health-checks', teacher, {
+      childId: 'c-arta',
+      checkDate: today,
+      checkTime: '08:25',
+      temperatureCelsius: 36.5,
+      symptoms: ['runny_nose'],
+      passedTriage: true,
+      notes: 'Slight runny nose, afebrile and playful',
+    })
+    assert.equal(checkRes.status, 201)
+    assert.equal(checkRes.data.check.temperatureCelsius, 36.5)
+    assert.equal(checkRes.data.check.passedTriage, true)
+    assert.deepEqual(checkRes.data.check.symptoms, ['runny_nose'])
+
+    // 10. Parent cannot record health check (staff only)
+    const parentCheckFail = await request('health-checks', parent, {
+      childId: 'c-arta',
+      checkDate: today,
+      checkTime: '08:40',
+      temperatureCelsius: 36.8,
+      symptoms: [],
+      passedTriage: true,
+    })
+    assert.equal(parentCheckFail.status, 403)
+
+    // 11. Fetch health checks with summary
+    const listChecks = await request(`health-checks?date=${today}`, director)
+    assert.equal(listChecks.status, 200)
+    assert.ok(listChecks.data.checks.length >= 1)
+    assert.ok(listChecks.data.summary.total >= 1)
+    assert.ok(listChecks.data.summary.averageTemp > 35)
+  } finally {
+    await f.dispose()
+  }
+})

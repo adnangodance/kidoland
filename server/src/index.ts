@@ -3,7 +3,7 @@ import cors from 'cors'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
-import { db, localCalendarDate, type DbUser, type DbChildSleepLog } from './db.js'
+import { db, localCalendarDate, type DbUser, type DbChildSleepLog, type DbChildMedication } from './db.js'
 import { requireAuth, signToken, type AuthUser } from './auth.js'
 
 export const app = express()
@@ -2540,6 +2540,402 @@ app.delete('/api/sleep-logs/:id', requireAuth, (req, res) => {
 
   db.prepare('DELETE FROM child_sleep_logs WHERE id = ?').run(req.params.id)
   res.json({ success: true })
+})
+
+// --- Phase 14: Medication Administration & Daily Health Triage ---
+
+const medicationSelectFields = `
+  SELECT m.id, m.child_id AS childId, c.name AS childName, c.group_name AS groupName,
+         m.medication_name AS medicationName, m.dosage, m.frequency_schedule AS frequencySchedule,
+         m.instructions, m.storage_type AS storageType, m.doctor_name AS doctorName,
+         m.prescription_number AS prescriptionNumber, m.start_date AS startDate, m.end_date AS endDate,
+         m.status, m.authorized_by AS authorizedBy, u.name AS authorizedByName,
+         m.created_at AS createdAt, m.updated_at AS updatedAt,
+         (SELECT COUNT(*) FROM medication_logs ml WHERE ml.medication_id = m.id) AS logsCount,
+         (SELECT ml.administered_at FROM medication_logs ml WHERE ml.medication_id = m.id ORDER BY ml.administered_at DESC LIMIT 1) AS lastAdministeredAt
+  FROM child_medications m
+  JOIN children c ON c.id = m.child_id
+  JOIN users u ON u.id = m.authorized_by
+`
+
+const medicationLogSelectFields = `
+  SELECT l.id, l.medication_id AS medicationId, l.child_id AS childId,
+         l.administered_at AS administeredAt, l.dosage_given AS dosageGiven,
+         l.reaction, l.administered_by AS administeredBy, u1.name AS administeredByName,
+         l.witness_by AS witnessBy, u2.name AS witnessByName,
+         l.notes, l.created_at AS createdAt
+  FROM medication_logs l
+  JOIN users u1 ON u1.id = l.administered_by
+  LEFT JOIN users u2 ON u2.id = l.witness_by
+`
+
+const healthCheckSelectFields = `
+  SELECT h.id, h.child_id AS childId, c.name AS childName, c.group_name AS groupName,
+         h.check_date AS checkDate, h.check_time AS checkTime,
+         h.temperature_celsius AS temperatureCelsius, h.symptoms,
+         h.passed_triage AS passedTriage, h.notes,
+         h.checked_by AS checkedBy, u.name AS checkedByName,
+         h.created_at AS createdAt, h.updated_at AS updatedAt
+  FROM daily_health_checks h
+  JOIN children c ON c.id = h.child_id
+  JOIN users u ON u.id = h.checked_by
+`
+
+const createMedicationSchema = z.object({
+  childId: z.string().trim().min(1),
+  medicationName: z.string().trim().min(1),
+  dosage: z.string().trim().min(1),
+  frequencySchedule: z.string().trim().min(1),
+  instructions: z.string().trim(),
+  storageType: z.enum(['room_temperature', 'refrigerated', 'locked_box']),
+  doctorName: z.string().trim().min(1),
+  prescriptionNumber: z.string().trim().optional(),
+  startDate: calendarDate,
+  endDate: calendarDate,
+}).strict()
+
+const updateMedicationSchema = z.object({
+  status: z.enum(['active', 'completed', 'cancelled']).optional(),
+  instructions: z.string().trim().optional(),
+  storageType: z.enum(['room_temperature', 'refrigerated', 'locked_box']).optional(),
+  endDate: calendarDate.optional(),
+}).strict()
+
+const administerMedicationSchema = z.object({
+  dosageGiven: z.string().trim().min(1),
+  reaction: z.enum(['normal', 'drowsy', 'refused', 'adverse']),
+  witnessBy: z.string().trim().optional().nullable(),
+  notes: z.string().trim().optional(),
+  administeredAt: z.string().datetime().optional(),
+}).strict()
+
+const createHealthCheckSchema = z.object({
+  childId: z.string().trim().min(1),
+  checkDate: calendarDate,
+  checkTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  temperatureCelsius: z.number().min(34.0).max(42.0),
+  symptoms: z.array(z.string().trim()),
+  passedTriage: z.boolean(),
+  notes: z.string().trim().optional(),
+}).strict()
+
+app.get('/api/medications', requireAuth, (req, res) => {
+  const user = authed(req)
+  const childId = typeof req.query.childId === 'string' && req.query.childId ? req.query.childId : undefined
+  const status = typeof req.query.status === 'string' && ['active', 'completed', 'cancelled'].includes(req.query.status)
+    ? req.query.status
+    : undefined
+
+  if (user.role === 'parent' && childId) {
+    const owned = db.prepare('SELECT id FROM children WHERE id = ? AND parent_user_id = ?').get(childId, user.id)
+    if (!owned) return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const conditions: string[] = []
+  const params: any[] = []
+
+  if (user.role === 'parent') {
+    conditions.push('c.parent_user_id = ?')
+    params.push(user.id)
+  }
+
+  if (childId) {
+    conditions.push('m.child_id = ?')
+    params.push(childId)
+  }
+
+  if (status) {
+    conditions.push('m.status = ?')
+    params.push(status)
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+  const sql = `${medicationSelectFields} ${whereClause} ORDER BY m.created_at DESC`
+  const medications = db.prepare(sql).all(...params) as any[]
+
+  let activeCount = 0
+  let completedCount = 0
+  let cancelledCount = 0
+
+  for (const m of medications) {
+    if (m.status === 'active') activeCount++
+    else if (m.status === 'completed') completedCount++
+    else if (m.status === 'cancelled') cancelledCount++
+  }
+
+  res.json({
+    medications,
+    summary: {
+      total: medications.length,
+      active: activeCount,
+      completed: completedCount,
+      cancelled: cancelledCount,
+    },
+  })
+})
+
+app.post('/api/medications', requireAuth, (req, res) => {
+  const user = authed(req)
+  const parsed = createMedicationSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
+  }
+
+  const child = db.prepare('SELECT id, parent_user_id FROM children WHERE id = ?').get(parsed.data.childId) as { id: string; parent_user_id: string } | undefined
+  if (!child) return res.status(404).json({ error: 'child_not_found' })
+
+  if (user.role === 'parent' && child.parent_user_id !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const medId = `med-${randomUUID().slice(0, 8)}`
+  const now = new Date().toISOString()
+
+  db.prepare(`
+    INSERT INTO child_medications (id, child_id, medication_name, dosage, frequency_schedule, instructions, storage_type, doctor_name, prescription_number, start_date, end_date, status, authorized_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+  `).run(
+    medId,
+    parsed.data.childId,
+    parsed.data.medicationName,
+    parsed.data.dosage,
+    parsed.data.frequencySchedule,
+    parsed.data.instructions,
+    parsed.data.storageType,
+    parsed.data.doctorName,
+    parsed.data.prescriptionNumber || '',
+    parsed.data.startDate,
+    parsed.data.endDate,
+    user.id,
+    now,
+    now,
+  )
+
+  const created = db.prepare(`${medicationSelectFields} WHERE m.id = ?`).get(medId)
+  res.status(201).json({ success: true, medication: created })
+})
+
+app.put('/api/medications/:id', requireAuth, (req, res) => {
+  const user = authed(req)
+  const existing = db.prepare('SELECT m.*, c.parent_user_id FROM child_medications m JOIN children c ON c.id = m.child_id WHERE m.id = ?').get(req.params.id) as (DbChildMedication & { parent_user_id: string }) | undefined
+  if (!existing) return res.status(404).json({ error: 'not_found' })
+
+  if (user.role === 'parent' && existing.parent_user_id !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const parsed = updateMedicationSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
+  }
+
+  const status = parsed.data.status || existing.status
+  const instructions = parsed.data.instructions !== undefined ? parsed.data.instructions : existing.instructions
+  const storageType = parsed.data.storageType || existing.storage_type
+  const endDate = parsed.data.endDate || existing.end_date
+  const now = new Date().toISOString()
+
+  db.prepare(`
+    UPDATE child_medications
+    SET status = ?, instructions = ?, storage_type = ?, end_date = ?, updated_at = ?
+    WHERE id = ?
+  `).run(status, instructions, storageType, endDate, now, req.params.id)
+
+  const updated = db.prepare(`${medicationSelectFields} WHERE m.id = ?`).get(req.params.id)
+  res.json({ success: true, medication: updated })
+})
+
+app.get('/api/medications/:id/logs', requireAuth, (req, res) => {
+  const user = authed(req)
+  const medication = db.prepare('SELECT m.*, c.parent_user_id FROM child_medications m JOIN children c ON c.id = m.child_id WHERE m.id = ?').get(req.params.id) as (DbChildMedication & { parent_user_id: string }) | undefined
+  if (!medication) return res.status(404).json({ error: 'not_found' })
+
+  if (user.role === 'parent' && medication.parent_user_id !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const logs = db.prepare(`${medicationLogSelectFields} WHERE l.medication_id = ? ORDER BY l.administered_at DESC`).all(req.params.id)
+  res.json({ logs })
+})
+
+app.post('/api/medications/:id/administer', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const medication = db.prepare('SELECT * FROM child_medications WHERE id = ?').get(req.params.id) as DbChildMedication | undefined
+  if (!medication) return res.status(404).json({ error: 'not_found' })
+
+  if (medication.status !== 'active') {
+    return res.status(400).json({ error: 'medication_not_active' })
+  }
+
+  const parsed = administerMedicationSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
+  }
+
+  let witnessId: string | null = null
+  if (parsed.data.witnessBy) {
+    const witnessUser = db.prepare('SELECT id FROM users WHERE id = ?').get(parsed.data.witnessBy)
+    if (witnessUser) {
+      witnessId = parsed.data.witnessBy
+    }
+  }
+
+  const logId = `mlog-${randomUUID().slice(0, 8)}`
+  const now = new Date().toISOString()
+  const administeredAt = parsed.data.administeredAt || now
+
+  db.prepare(`
+    INSERT INTO medication_logs (id, medication_id, child_id, administered_at, dosage_given, reaction, administered_by, witness_by, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    logId,
+    medication.id,
+    medication.child_id,
+    administeredAt,
+    parsed.data.dosageGiven,
+    parsed.data.reaction,
+    user.id,
+    witnessId,
+    parsed.data.notes || '',
+    now,
+  )
+
+  const createdLog = db.prepare(`${medicationLogSelectFields} WHERE l.id = ?`).get(logId)
+  res.status(201).json({ success: true, log: createdLog })
+})
+
+app.get('/api/health-checks', requireAuth, (req, res) => {
+  const user = authed(req)
+  const childId = typeof req.query.childId === 'string' && req.query.childId ? req.query.childId : undefined
+  const date = typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date) ? req.query.date : undefined
+
+  if (user.role === 'parent' && childId) {
+    const owned = db.prepare('SELECT id FROM children WHERE id = ? AND parent_user_id = ?').get(childId, user.id)
+    if (!owned) return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const conditions: string[] = []
+  const params: any[] = []
+
+  if (user.role === 'parent') {
+    conditions.push('c.parent_user_id = ?')
+    params.push(user.id)
+  }
+
+  if (childId) {
+    conditions.push('h.child_id = ?')
+    params.push(childId)
+  }
+
+  if (date) {
+    conditions.push('h.check_date = ?')
+    params.push(date)
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+  const sql = `${healthCheckSelectFields} ${whereClause} ORDER BY h.check_date DESC, h.check_time DESC`
+  const rows = db.prepare(sql).all(...params) as any[]
+
+  let passedCount = 0
+  let flaggedCount = 0
+  let totalTemp = 0
+
+  const checks = rows.map((r) => {
+    let symptomsArr: string[] = []
+    try {
+      symptomsArr = JSON.parse(r.symptoms)
+    } catch {
+      symptomsArr = []
+    }
+    const passed = Boolean(r.passedTriage)
+    if (passed) passedCount++
+    else flaggedCount++
+    totalTemp += r.temperatureCelsius
+
+    return {
+      ...r,
+      passedTriage: passed,
+      symptoms: symptomsArr,
+    }
+  })
+
+  const averageTemp = checks.length > 0 ? Number((totalTemp / checks.length).toFixed(1)) : 36.6
+
+  res.json({
+    checks,
+    summary: {
+      total: checks.length,
+      passed: passedCount,
+      flagged: flaggedCount,
+      averageTemp,
+    },
+  })
+})
+
+app.post('/api/health-checks', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const parsed = createHealthCheckSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
+  }
+
+  const child = db.prepare('SELECT id FROM children WHERE id = ?').get(parsed.data.childId)
+  if (!child) return res.status(404).json({ error: 'child_not_found' })
+
+  const checkId = `dhc-${randomUUID().slice(0, 8)}`
+  const now = new Date().toISOString()
+  const symptomsJson = JSON.stringify(parsed.data.symptoms)
+  const passedInt = parsed.data.passedTriage ? 1 : 0
+
+  db.prepare(`
+    INSERT INTO daily_health_checks (id, child_id, check_date, check_time, temperature_celsius, symptoms, passed_triage, notes, checked_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(child_id, check_date) DO UPDATE SET
+      check_time = excluded.check_time,
+      temperature_celsius = excluded.temperature_celsius,
+      symptoms = excluded.symptoms,
+      passed_triage = excluded.passed_triage,
+      notes = excluded.notes,
+      checked_by = excluded.checked_by,
+      updated_at = excluded.updated_at
+  `).run(
+    checkId,
+    parsed.data.childId,
+    parsed.data.checkDate,
+    parsed.data.checkTime,
+    parsed.data.temperatureCelsius,
+    symptomsJson,
+    passedInt,
+    parsed.data.notes || '',
+    user.id,
+    now,
+    now,
+  )
+
+  const createdRow = db.prepare(`${healthCheckSelectFields} WHERE h.child_id = ? AND h.check_date = ?`).get(parsed.data.childId, parsed.data.checkDate) as any
+  let symptomsArr: string[] = []
+  try {
+    symptomsArr = JSON.parse(createdRow.symptoms)
+  } catch {
+    symptomsArr = []
+  }
+
+  res.status(201).json({
+    success: true,
+    check: {
+      ...createdRow,
+      passedTriage: Boolean(createdRow.passedTriage),
+      symptoms: symptomsArr,
+    },
+  })
 })
 
 app.get('/api/dashboard', requireAuth, (req, res) => {

@@ -24,12 +24,13 @@ import KimiNavigation from './KimiNavigation'
 import PageFinder from './PageFinder'
 import { Documents } from './Documents'
 import { SleepTracker } from './SleepTracker'
+import { MedicationHealth } from './MedicationHealth'
 import './App.css'
 import './theme.css'
 import './Sidebar.css'
 import './Kindergarten.css'
 
-type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents' | 'sleep'
+type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents' | 'sleep' | 'medications'
 
 const DEMO: { email: string; password: string; roleKey: 'roleParent' | 'roleTeacher' | 'roleDirector'; name?: string }[] = [
   { email: 'adnan@kidoland.demo', password: 'parent123', roleKey: 'roleParent', name: 'Adnan Godanci (Parent)' },
@@ -73,6 +74,7 @@ function Shell() {
       { view: 'children', label: user?.role === 'parent' ? t.consentTitle : t.childrenTitle, icon: 'children' },
       { view: 'payments', label: t.navPayments, icon: 'payments' },
       { view: 'documents', label: t.navDocuments, icon: 'documents' },
+      { view: 'medications', label: t.navMedications, icon: 'medication' },
       { view: 'absences', label: t.navAbsences, icon: 'absences' },
       { view: 'incidents', label: t.navIncidents, icon: 'incidents' },
       { view: 'milestones', label: t.navMilestones, icon: 'milestones' },
@@ -172,6 +174,7 @@ function Shell() {
         {user && activeView === 'milestones' && <Milestones />}
         {user && activeView === 'documents' && <Documents />}
         {user && activeView === 'sleep' && <SleepTracker />}
+        {user && activeView === 'medications' && <MedicationHealth />}
         {user && activeView === 'children' && <Children />}
       </main>
       <footer className="footer"><span className="footer-mark" aria-hidden="true"><Icon name="leaf" size={15} /></span><p>{t.footer}</p></footer>

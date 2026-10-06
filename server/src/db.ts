@@ -362,7 +362,106 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
   );
   CREATE INDEX IF NOT EXISTS child_sleep_logs_child_date ON child_sleep_logs(child_id, log_date);
   CREATE INDEX IF NOT EXISTS child_sleep_logs_date ON child_sleep_logs(log_date);
+
+  CREATE TABLE IF NOT EXISTS child_medications (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    medication_name TEXT NOT NULL,
+    dosage TEXT NOT NULL,
+    frequency_schedule TEXT NOT NULL,
+    instructions TEXT NOT NULL,
+    storage_type TEXT NOT NULL CHECK(storage_type IN ('room_temperature', 'refrigerated', 'locked_box')),
+    doctor_name TEXT NOT NULL,
+    prescription_number TEXT NOT NULL DEFAULT '',
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('active', 'completed', 'cancelled')),
+    authorized_by TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS child_medications_child_status ON child_medications(child_id, status);
+
+  CREATE TABLE IF NOT EXISTS medication_logs (
+    id TEXT PRIMARY KEY,
+    medication_id TEXT NOT NULL REFERENCES child_medications(id) ON DELETE CASCADE,
+    child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    administered_at TEXT NOT NULL,
+    dosage_given TEXT NOT NULL,
+    reaction TEXT NOT NULL CHECK(reaction IN ('normal', 'drowsy', 'refused', 'adverse')),
+    administered_by TEXT NOT NULL REFERENCES users(id),
+    witness_by TEXT REFERENCES users(id),
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS medication_logs_med_admin ON medication_logs(medication_id, administered_at);
+  CREATE INDEX IF NOT EXISTS medication_logs_child ON medication_logs(child_id);
+
+  CREATE TABLE IF NOT EXISTS daily_health_checks (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    check_date TEXT NOT NULL,
+    check_time TEXT NOT NULL,
+    temperature_celsius REAL NOT NULL,
+    symptoms TEXT NOT NULL DEFAULT '[]',
+    passed_triage INTEGER NOT NULL CHECK(passed_triage IN (0, 1)),
+    notes TEXT NOT NULL DEFAULT '',
+    checked_by TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(child_id, check_date)
+  );
+  CREATE INDEX IF NOT EXISTS daily_health_checks_date_child ON daily_health_checks(check_date, child_id);
 `)
+
+export type MedicationStorage = 'room_temperature' | 'refrigerated' | 'locked_box'
+export type MedicationStatus = 'active' | 'completed' | 'cancelled'
+export type ChildReaction = 'normal' | 'drowsy' | 'refused' | 'adverse'
+
+export type DbChildMedication = {
+  id: string
+  child_id: string
+  medication_name: string
+  dosage: string
+  frequency_schedule: string
+  instructions: string
+  storage_type: MedicationStorage
+  doctor_name: string
+  prescription_number: string
+  start_date: string
+  end_date: string
+  status: MedicationStatus
+  authorized_by: string
+  created_at: string
+  updated_at: string
+}
+
+export type DbMedicationLog = {
+  id: string
+  medication_id: string
+  child_id: string
+  administered_at: string
+  dosage_given: string
+  reaction: ChildReaction
+  administered_by: string
+  witness_by: string | null
+  notes: string
+  created_at: string
+}
+
+export type DbDailyHealthCheck = {
+  id: string
+  child_id: string
+  check_date: string
+  check_time: string
+  temperature_celsius: number
+  symptoms: string
+  passed_triage: number
+  notes: string
+  checked_by: string
+  created_at: string
+  updated_at: string
+}
 
 export type DocumentType = 'enrollment_contract' | 'vaccination_record' | 'birth_certificate' | 'medical_clearance' | 'custody_legal' | 'other'
 export type DocumentStatus = 'pending_review' | 'verified' | 'rejected' | 'expired'
@@ -1431,6 +1530,95 @@ if (sleepCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta
       75,
       'light',
       'U zgjua një herë për pak ujë dhe u kthye në pushim. / Woke up once for water.',
+      'u-teacher',
+      now,
+      now,
+    )
+  }
+}
+
+const childMedCount = db.prepare('SELECT COUNT(*) AS c FROM child_medications').get() as { c: number }
+if (childMedCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get() && db.prepare("SELECT id FROM users WHERE id = 'u-parent'").get()) {
+  const insertMed = db.prepare(`
+    INSERT INTO child_medications (id, child_id, medication_name, dosage, frequency_schedule, instructions, storage_type, doctor_name, prescription_number, start_date, end_date, status, authorized_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const insertLog = db.prepare(`
+    INSERT INTO medication_logs (id, medication_id, child_id, administered_at, dosage_given, reaction, administered_by, witness_by, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const today = localCalendarDate()
+  const now = new Date().toISOString()
+  const endDate = new Date(Date.now() + 7 * 86400000)
+  const endDateStr = localCalendarDate(endDate)
+
+  insertMed.run(
+    'med-arta-1',
+    'c-arta',
+    'Amoxicillin Sirop (Antibiotik)',
+    '5 ml',
+    'Çdo ditë në ora 12:00 / Daily at 12:00',
+    'Të jepet pas drekës me lëng ose ujë të freskët. / Give after lunch with water.',
+    'refrigerated',
+    'Dr. Valon Berisha',
+    'RX-2026-9481',
+    today,
+    endDateStr,
+    'active',
+    'u-parent',
+    now,
+    now,
+  )
+
+  if (db.prepare("SELECT id FROM users WHERE id = 'u-teacher'").get()) {
+    insertLog.run(
+      'mlog-arta-1',
+      'med-arta-1',
+      'c-arta',
+      `${today}T12:05:00.000Z`,
+      '5 ml',
+      'normal',
+      'u-teacher',
+      'u-director',
+      'E pranoi me sukses pas buke. / Administered after lunch smoothly.',
+      now,
+    )
+  }
+}
+
+const healthCheckCount = db.prepare('SELECT COUNT(*) AS c FROM daily_health_checks').get() as { c: number }
+if (healthCheckCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get() && db.prepare("SELECT id FROM users WHERE id = 'u-teacher'").get()) {
+  const insertCheck = db.prepare(`
+    INSERT INTO daily_health_checks (id, child_id, check_date, check_time, temperature_celsius, symptoms, passed_triage, notes, checked_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const today = localCalendarDate()
+  const now = new Date().toISOString()
+
+  insertCheck.run(
+    'dhc-arta-1',
+    'c-arta',
+    today,
+    '08:15',
+    36.6,
+    '[]',
+    1,
+    'E buzëqeshur, pa kollë apo temperaturë. / Healthy arrival, clear triage.',
+    'u-teacher',
+    now,
+    now,
+  )
+
+  if (db.prepare("SELECT id FROM children WHERE id = 'c-luan'").get()) {
+    insertCheck.run(
+      'dhc-luan-1',
+      'c-luan',
+      today,
+      '08:30',
+      36.7,
+      '[]',
+      1,
+      'Gjendje e mirë shëndetësore gjatë pranimit. / Fit and cheerful upon check-in.',
       'u-teacher',
       now,
       now,

@@ -17,6 +17,7 @@ const paths = {
   milestones: 'M4 21V11 M10 21V7 M16 21V3 M22 21H2 M4 7l6-4 6-1',
   documents: 'M6 3h9l4 4v14H6z M14 3v5h5 M9 12h7 M9 16h5',
   sleep: 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z',
+  medication: 'M10.5 20.5l10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7z M8.5 8.5l7 7',
   children: 'M9 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0 M21 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0 M1 21v-3a5 5 0 0 1 10 0v3 M13 21v-3a5 5 0 0 1 10 0v3',
   arrow: 'M4 12h16 M14 6l6 6-6 6',
   check: 'M5 12l4 4L19 6',

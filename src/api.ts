@@ -1058,3 +1058,162 @@ export async function deleteSleepLog(token: string, id: string) {
     method: 'DELETE',
   }, token)
 }
+
+export type MedicationStorage = 'room_temperature' | 'refrigerated' | 'locked_box'
+export type MedicationStatus = 'active' | 'completed' | 'cancelled'
+export type ChildReaction = 'normal' | 'drowsy' | 'refused' | 'adverse'
+
+export type ChildMedication = {
+  id: string
+  childId: string
+  childName: string
+  groupName: string
+  medicationName: string
+  dosage: string
+  frequencySchedule: string
+  instructions: string
+  storageType: MedicationStorage
+  doctorName: string
+  prescriptionNumber: string
+  startDate: string
+  endDate: string
+  status: MedicationStatus
+  authorizedBy: string
+  authorizedByName: string
+  createdAt: string
+  updatedAt: string
+  logsCount: number
+  lastAdministeredAt: string | null
+}
+
+export type MedicationLog = {
+  id: string
+  medicationId: string
+  childId: string
+  administeredAt: string
+  dosageGiven: string
+  reaction: ChildReaction
+  administeredBy: string
+  administeredByName: string
+  witnessBy: string | null
+  witnessByName: string | null
+  notes: string
+  createdAt: string
+}
+
+export type DailyHealthCheck = {
+  id: string
+  childId: string
+  childName: string
+  groupName: string
+  checkDate: string
+  checkTime: string
+  temperatureCelsius: number
+  symptoms: string[]
+  passedTriage: boolean
+  notes: string
+  checkedBy: string
+  checkedByName: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type MedicationSummaryStats = {
+  total: number
+  active: number
+  completed: number
+  cancelled: number
+}
+
+export type HealthCheckSummaryStats = {
+  total: number
+  passed: number
+  flagged: number
+  averageTemp: number
+}
+
+export type CreateMedicationInput = {
+  childId: string
+  medicationName: string
+  dosage: string
+  frequencySchedule: string
+  instructions: string
+  storageType: MedicationStorage
+  doctorName: string
+  prescriptionNumber?: string
+  startDate: string
+  endDate: string
+}
+
+export type UpdateMedicationInput = {
+  status?: MedicationStatus
+  instructions?: string
+  storageType?: MedicationStorage
+  endDate?: string
+}
+
+export type AdministerMedicationInput = {
+  dosageGiven: string
+  reaction: ChildReaction
+  witnessBy?: string | null
+  notes?: string
+  administeredAt?: string
+}
+
+export type CreateHealthCheckInput = {
+  childId: string
+  checkDate: string
+  checkTime: string
+  temperatureCelsius: number
+  symptoms: string[]
+  passedTriage: boolean
+  notes?: string
+}
+
+export async function listMedications(token: string, options?: { childId?: string; status?: MedicationStatus }, signal?: AbortSignal) {
+  const query = new URLSearchParams()
+  if (options?.childId) query.set('childId', options.childId)
+  if (options?.status) query.set('status', options.status)
+  const qs = query.toString() ? `?${query}` : ''
+  return api<{ medications: ChildMedication[]; summary: MedicationSummaryStats }>(`/api/medications${qs}`, { signal }, token)
+}
+
+export async function createMedication(token: string, input: CreateMedicationInput) {
+  return api<{ success: boolean; medication: ChildMedication }>('/api/medications', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function updateMedication(token: string, id: string, input: UpdateMedicationInput) {
+  return api<{ success: boolean; medication: ChildMedication }>(`/api/medications/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function listMedicationLogs(token: string, medicationId: string, signal?: AbortSignal) {
+  return api<{ logs: MedicationLog[] }>(`/api/medications/${medicationId}/logs`, { signal }, token)
+}
+
+export async function administerMedication(token: string, medicationId: string, input: AdministerMedicationInput) {
+  return api<{ success: boolean; log: MedicationLog }>(`/api/medications/${medicationId}/administer`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function listHealthChecks(token: string, options?: { date?: string; childId?: string }, signal?: AbortSignal) {
+  const query = new URLSearchParams()
+  if (options?.date) query.set('date', options.date)
+  if (options?.childId) query.set('childId', options.childId)
+  const qs = query.toString() ? `?${query}` : ''
+  return api<{ checks: DailyHealthCheck[]; summary: HealthCheckSummaryStats }>(`/api/health-checks${qs}`, { signal }, token)
+}
+
+export async function createHealthCheck(token: string, input: CreateHealthCheckInput) {
+  return api<{ success: boolean; check: DailyHealthCheck }>('/api/health-checks', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token)
+}
