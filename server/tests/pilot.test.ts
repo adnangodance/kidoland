@@ -1402,3 +1402,98 @@ test('medication administration, logs, and morning health check triage API', asy
     await f.dispose()
   }
 })
+
+test('child potty and diaper hygiene tracker API', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const director = await f.login('director')
+    const teacher = await f.login('teacher')
+    const parent = await f.login('parent')
+    const d = new Date()
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+    // 1. Director fetches seeded hygiene logs
+    const seededRes = await request('hygiene-logs', director)
+    assert.equal(seededRes.status, 200)
+    assert.ok(seededRes.data.logs.length >= 3)
+    assert.ok(seededRes.data.summary.total >= 3)
+    assert.ok(seededRes.data.summary.wetCount >= 1)
+    assert.ok(seededRes.data.summary.pottySuccessCount >= 1)
+    assert.ok(seededRes.data.summary.creamCount >= 1)
+
+    // 2. Parent fetches logs with role isolation
+    const parentRes = await request('hygiene-logs', parent)
+    assert.equal(parentRes.status, 200)
+    // Parent should only see their child's (Arta's) logs
+    for (const log of parentRes.data.logs) {
+      assert.equal(log.childId, 'c-arta')
+    }
+
+    // Parent cannot fetch foreign child
+    const foreignRes = await request('hygiene-logs?childId=c-blerim', parent)
+    assert.equal(foreignRes.status, 403)
+
+    // 3. Teacher creates a new diaper log
+    const createDiaperRes = await request('hygiene-logs', teacher, {
+      childId: 'c-arta',
+      logDate: today,
+      logTime: '15:30',
+      entryType: 'diaper',
+      diaperType: 'both',
+      creamApplied: true,
+      notes: 'Changed before snack time',
+    })
+    assert.equal(createDiaperRes.status, 201)
+    assert.equal(createDiaperRes.data.log.entryType, 'diaper')
+    assert.equal(createDiaperRes.data.log.diaperType, 'both')
+    assert.equal(createDiaperRes.data.log.creamApplied, true)
+    const newLogId = createDiaperRes.data.log.id
+
+    // 4. Teacher creates a potty log
+    const createPottyRes = await request('hygiene-logs', teacher, {
+      childId: 'c-arta',
+      logDate: today,
+      logTime: '16:15',
+      entryType: 'potty',
+      pottyResult: 'success_pee',
+      notes: 'Went proudly by herself',
+    })
+    assert.equal(createPottyRes.status, 201)
+    assert.equal(createPottyRes.data.log.entryType, 'potty')
+    assert.equal(createPottyRes.data.log.pottyResult, 'success_pee')
+
+    // 5. Parent cannot create hygiene log
+    const parentCreateFail = await request('hygiene-logs', parent, {
+      childId: 'c-arta',
+      logDate: today,
+      logTime: '16:30',
+      entryType: 'diaper',
+      diaperType: 'wet',
+    })
+    assert.equal(parentCreateFail.status, 403)
+
+    // 6. Teacher updates the log
+    const updateRes = await request(`hygiene-logs/${newLogId}`, teacher, {
+      notes: 'Updated: diaper dry, used potty instead',
+      entryType: 'potty',
+      pottyResult: 'success_both',
+    }, 'PUT')
+    assert.equal(updateRes.status, 200)
+    assert.equal(updateRes.data.log.entryType, 'potty')
+    assert.equal(updateRes.data.log.pottyResult, 'success_both')
+    assert.equal(updateRes.data.log.notes, 'Updated: diaper dry, used potty instead')
+
+    // 7. Teacher deletes the log
+    const deleteRes = await request(`hygiene-logs/${newLogId}`, teacher, undefined, 'DELETE')
+    assert.equal(deleteRes.status, 200)
+
+    // 8. Log is no longer present
+    const afterDeleteRes = await request('hygiene-logs', director)
+    const found = afterDeleteRes.data.logs.find((l: any) => l.id === newLogId)
+    assert.equal(found, undefined)
+  } finally {
+    await f.dispose()
+  }
+})

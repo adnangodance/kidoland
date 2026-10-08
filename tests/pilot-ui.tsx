@@ -114,6 +114,7 @@ async function run() {
   await until(() => main().querySelector('.day-child-card'), 'loaded dashboard children')
   assert(main().querySelectorAll('.metric-card').length === 6 && main().querySelector('.playground-art')?.getAttribute('aria-hidden') === 'true', 'kindergarten welcome keeps decorative art separate from six real metrics')
   assert(main().querySelectorAll('.day-child-card').length === 2 && main().querySelector('.day-child-card')?.textContent?.includes('Arta Krasniqi'), 'staff dashboard renders real children with their attendance and report actions')
+
   const welcomeArt = main().querySelector('.playground-art')!.getBoundingClientRect(), welcomeDate = main().querySelector('.dashboard-date')!.getBoundingClientRect()
   assert(welcomeArt.bottom <= welcomeDate.top + 1 || welcomeArt.right <= welcomeDate.left + 1 || welcomeDate.right <= welcomeArt.left + 1, 'decorative welcome drawing has its own space outside the date controls')
   const artaCard = [...main().querySelectorAll('.day-child-card')].find((card) => card.textContent?.includes('Arta Krasniqi'))!
@@ -172,13 +173,14 @@ async function run() {
     ['absences', translations.en.navAbsences],
     ['incidents', translations.en.navIncidents], ['milestones', translations.en.navMilestones],
     ['staff', translations.en.navStaffShifts], ['sleep', translations.en.navSleepTracker],
+    ['hygiene', translations.en.navHygiene],
     ['medications', translations.en.navMedications],
   ])
   const sidebarPages = [...document.querySelectorAll<HTMLButtonElement>('.sidebar button[data-view]')]
   assert(sidebarPages.length === expectedPages.size && sidebarPages.every((element) => element.querySelector('span:last-child')?.textContent === expectedPages.get(element.dataset.view!)), 'sidebar identifies all working Kidoland destinations with their own labels')
   assert(new Set(sidebarPages.map((element) => element.dataset.view)).size === expectedPages.size && sidebarPages.slice(0, 5).map((element) => element.dataset.view).join('|') === 'dashboard|attendance|reports|program|meals' && sidebarPages.at(-1)?.dataset.view === 'children', 'sidebar has unique destinations, daily care first, and the child directory in the bottom section')
   assert(document.querySelector('.sidebar-search')!.textContent?.includes(translations.en.searchPages) && !/My Kimi|New chat|New project|Projects|Chats/.test(document.querySelector('.sidebar')!.textContent!), 'sidebar search describes its action and has no copied product names')
-  assert(document.querySelectorAll('.sidebar button[data-view] .kimi-icon svg').length === 18, 'each Kidoland destination keeps the reference SVG icon treatment')
+  assert(document.querySelectorAll('.sidebar button[data-view] .kimi-icon svg').length === 19, 'each Kidoland destination keeps the reference SVG icon treatment')
   await openSidebar()
   const morePages = document.querySelector<HTMLButtonElement>('.kimi-more')!
   const moreSection = document.getElementById(morePages.getAttribute('aria-controls')!)!
@@ -291,7 +293,7 @@ async function run() {
     ['announcements', 'navAnnouncements'], ['moments', 'navMoments'], ['events', 'navEvents'],
     ['children', 'childrenTitle'], ['payments', 'navPayments'], ['documents', 'navDocuments'], ['absences', 'navAbsences'],
     ['incidents', 'navIncidents'], ['milestones', 'navMilestones'], ['staff', 'navStaffShifts'],
-    ['sleep', 'navSleepTracker'], ['medications', 'navMedications'],
+    ['sleep', 'navSleepTracker'], ['hygiene', 'navHygiene'], ['medications', 'navMedications'],
   ] as const)
   await openSidebar()
   assert([...document.querySelectorAll<HTMLButtonElement>('.sidebar button[data-view]')].every((element) => element.querySelector('span:last-child')?.textContent === translations.sq[sqKeys.get(element.dataset.view!)!]) && document.querySelector('.nav-group-label')?.textContent === translations.sq.navManagement && document.querySelector('.sidebar-search > span:not(.kimi-icon)')?.textContent === translations.sq.searchPages, 'all sidebar pages, the management heading, and search action use Albanian labels')
@@ -426,6 +428,11 @@ async function run() {
   assert(main().textContent?.includes(translations.en.statActiveMedications), 'director navigates to medications & health check tracker'); fit('medications and triage'); await capture('medications')
   assert(Boolean(main().querySelector('.med-card')), 'director sees seeded medication authorization cards')
   assert(main().textContent?.includes(translations.en.statusActiveMed), 'director views active medication status')
+  await nav(translations.en.navHygiene); await until(() => main().textContent?.includes(translations.en.hygieneTitle))
+  await until(() => main().querySelector('.hygiene-card'))
+  assert(main().textContent?.includes(translations.en.statTotalHygiene), 'director navigates to potty & diaper tracker'); fit('hygiene and potty tracker'); await capture('hygiene')
+  assert(Boolean(main().querySelector('.hygiene-card')), 'director sees seeded hygiene log cards')
+  assert(main().textContent?.includes(translations.en.statWetDiapers), 'director views wet diaper summary count')
   await nav(translations.en.childrenTitle); await until(() => main().querySelector('.roster-card'))
   assert([...main().querySelectorAll('.roster-card')].find((card) => card.textContent?.includes('Browser Child'))?.textContent?.includes(translations.en.allowed) && !main().querySelector('input[type=radio]'), 'staff reads persisted photo permission without consent controls')
   await nav(translations.en.navPayments); await until(() => main().querySelector('.roster-card'))

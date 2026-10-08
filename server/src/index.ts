@@ -3,7 +3,7 @@ import cors from 'cors'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
-import { db, localCalendarDate, type DbUser, type DbChildSleepLog, type DbChildMedication } from './db.js'
+import { db, localCalendarDate, type DbUser, type DbChildSleepLog, type DbChildMedication, type DbChildHygieneLog } from './db.js'
 import { requireAuth, signToken, type AuthUser } from './auth.js'
 
 export const app = express()
@@ -2936,6 +2936,211 @@ app.post('/api/health-checks', requireAuth, (req, res) => {
       symptoms: symptomsArr,
     },
   })
+})
+
+// --- Phase 15: Child Potty & Diaper Hygiene Tracker ---
+
+const hygieneSelectFields = `
+  SELECT h.id, h.child_id AS childId, c.name AS childName, c.group_name AS groupName,
+         h.log_date AS logDate, h.log_time AS logTime,
+         h.entry_type AS entryType, h.diaper_type AS diaperType,
+         h.potty_result AS pottyResult, h.cream_applied AS creamApplied,
+         h.notes, h.recorded_by AS recordedBy, u.name AS recordedByName,
+         h.created_at AS createdAt, h.updated_at AS updatedAt
+  FROM child_hygiene_logs h
+  JOIN children c ON c.id = h.child_id
+  JOIN users u ON u.id = h.recorded_by
+`
+
+const createHygieneLogSchema = z.object({
+  childId: z.string().trim().min(1),
+  logDate: calendarDate,
+  logTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  entryType: z.enum(['diaper', 'potty']),
+  diaperType: z.enum(['wet', 'dirty', 'both', 'dry']).optional().nullable(),
+  pottyResult: z.enum(['success_pee', 'success_bm', 'success_both', 'tried_dry', 'accident']).optional().nullable(),
+  creamApplied: z.boolean().optional(),
+  notes: z.string().trim().optional(),
+}).strict()
+
+const updateHygieneLogSchema = z.object({
+  logTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+  entryType: z.enum(['diaper', 'potty']).optional(),
+  diaperType: z.enum(['wet', 'dirty', 'both', 'dry']).optional().nullable(),
+  pottyResult: z.enum(['success_pee', 'success_bm', 'success_both', 'tried_dry', 'accident']).optional().nullable(),
+  creamApplied: z.boolean().optional(),
+  notes: z.string().trim().optional(),
+}).strict()
+
+app.get('/api/hygiene-logs', requireAuth, (req, res) => {
+  const user = authed(req)
+  const childId = typeof req.query.childId === 'string' && req.query.childId ? req.query.childId : undefined
+  const date = typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date) ? req.query.date : undefined
+  const entryType = typeof req.query.type === 'string' && ['diaper', 'potty'].includes(req.query.type) ? req.query.type : undefined
+
+  if (user.role === 'parent' && childId) {
+    const owned = db.prepare('SELECT id FROM children WHERE id = ? AND parent_user_id = ?').get(childId, user.id)
+    if (!owned) return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const conditions: string[] = []
+  const params: any[] = []
+
+  if (user.role === 'parent') {
+    conditions.push('c.parent_user_id = ?')
+    params.push(user.id)
+  }
+
+  if (childId) {
+    conditions.push('h.child_id = ?')
+    params.push(childId)
+  }
+
+  if (date) {
+    conditions.push('h.log_date = ?')
+    params.push(date)
+  }
+
+  if (entryType) {
+    conditions.push('h.entry_type = ?')
+    params.push(entryType)
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+  const sql = `${hygieneSelectFields} ${whereClause} ORDER BY h.log_date DESC, h.log_time DESC`
+  const rows = db.prepare(sql).all(...params) as any[]
+
+  let wetCount = 0
+  let dirtyCount = 0
+  let pottySuccessCount = 0
+  let accidentsCount = 0
+  let creamCount = 0
+
+  const logs = rows.map((r) => {
+    const cream = Boolean(r.creamApplied)
+    if (cream) creamCount++
+    if (r.entryType === 'diaper') {
+      if (r.diaperType === 'wet' || r.diaperType === 'both') wetCount++
+      if (r.diaperType === 'dirty' || r.diaperType === 'both') dirtyCount++
+    } else if (r.entryType === 'potty') {
+      if (r.pottyResult?.startsWith('success')) pottySuccessCount++
+      else if (r.pottyResult === 'accident') accidentsCount++
+    }
+
+    return {
+      ...r,
+      creamApplied: cream,
+    }
+  })
+
+  res.json({
+    logs,
+    summary: {
+      total: logs.length,
+      wetCount,
+      dirtyCount,
+      pottySuccessCount,
+      accidentsCount,
+      creamCount,
+    },
+  })
+})
+
+app.post('/api/hygiene-logs', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const parsed = createHygieneLogSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
+  }
+
+  const child = db.prepare('SELECT id FROM children WHERE id = ?').get(parsed.data.childId)
+  if (!child) return res.status(404).json({ error: 'child_not_found' })
+
+  const logId = `hyg-${randomUUID().slice(0, 8)}`
+  const now = new Date().toISOString()
+  const creamInt = parsed.data.creamApplied ? 1 : 0
+
+  db.prepare(`
+    INSERT INTO child_hygiene_logs (id, child_id, log_date, log_time, entry_type, diaper_type, potty_result, cream_applied, notes, recorded_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    logId,
+    parsed.data.childId,
+    parsed.data.logDate,
+    parsed.data.logTime,
+    parsed.data.entryType,
+    parsed.data.diaperType || null,
+    parsed.data.pottyResult || null,
+    creamInt,
+    parsed.data.notes || '',
+    user.id,
+    now,
+    now,
+  )
+
+  const created = db.prepare(`${hygieneSelectFields} WHERE h.id = ?`).get(logId) as any
+  res.status(201).json({
+    success: true,
+    log: {
+      ...created,
+      creamApplied: Boolean(created.creamApplied),
+    },
+  })
+})
+
+app.put('/api/hygiene-logs/:id', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const existing = db.prepare('SELECT * FROM child_hygiene_logs WHERE id = ?').get(req.params.id) as DbChildHygieneLog | undefined
+  if (!existing) return res.status(404).json({ error: 'not_found' })
+
+  const parsed = updateHygieneLogSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
+  }
+
+  const logTime = parsed.data.logTime || existing.log_time
+  const entryType = parsed.data.entryType || existing.entry_type
+  const diaperType = parsed.data.diaperType !== undefined ? parsed.data.diaperType : existing.diaper_type
+  const pottyResult = parsed.data.pottyResult !== undefined ? parsed.data.pottyResult : existing.potty_result
+  const creamApplied = parsed.data.creamApplied !== undefined ? (parsed.data.creamApplied ? 1 : 0) : existing.cream_applied
+  const notes = parsed.data.notes !== undefined ? parsed.data.notes : existing.notes
+  const now = new Date().toISOString()
+
+  db.prepare(`
+    UPDATE child_hygiene_logs
+    SET log_time = ?, entry_type = ?, diaper_type = ?, potty_result = ?, cream_applied = ?, notes = ?, updated_at = ?
+    WHERE id = ?
+  `).run(logTime, entryType, diaperType, pottyResult, creamApplied, notes, now, req.params.id)
+
+  const updated = db.prepare(`${hygieneSelectFields} WHERE h.id = ?`).get(req.params.id) as any
+  res.json({
+    success: true,
+    log: {
+      ...updated,
+      creamApplied: Boolean(updated.creamApplied),
+    },
+  })
+})
+
+app.delete('/api/hygiene-logs/:id', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  const existing = db.prepare('SELECT id FROM child_hygiene_logs WHERE id = ?').get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'not_found' })
+
+  db.prepare('DELETE FROM child_hygiene_logs WHERE id = ?').run(req.params.id)
+  res.json({ success: true })
 })
 
 app.get('/api/dashboard', requireAuth, (req, res) => {

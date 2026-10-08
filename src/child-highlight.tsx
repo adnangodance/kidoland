@@ -1,5 +1,4 @@
 import { isSeaGodanci } from './child-highlight-util'
-export { isSeaGodanci }
 
 export function SeaGodanciBadge({ name }: { name?: string | null }) {
   if (!isSeaGodanci(name)) return null

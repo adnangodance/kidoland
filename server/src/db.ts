@@ -412,7 +412,44 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
     UNIQUE(child_id, check_date)
   );
   CREATE INDEX IF NOT EXISTS daily_health_checks_date_child ON daily_health_checks(check_date, child_id);
+
+  CREATE TABLE IF NOT EXISTS child_hygiene_logs (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    log_date TEXT NOT NULL,
+    log_time TEXT NOT NULL,
+    entry_type TEXT NOT NULL CHECK(entry_type IN ('diaper', 'potty')),
+    diaper_type TEXT CHECK(diaper_type IN ('wet', 'dirty', 'both', 'dry', null)),
+    potty_result TEXT CHECK(potty_result IN ('success_pee', 'success_bm', 'success_both', 'tried_dry', 'accident', null)),
+    cream_applied INTEGER NOT NULL DEFAULT 0 CHECK(cream_applied IN (0, 1)),
+    notes TEXT NOT NULL DEFAULT '',
+    recorded_by TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS child_hygiene_logs_child_date ON child_hygiene_logs(child_id, log_date);
+  CREATE INDEX IF NOT EXISTS child_hygiene_logs_date ON child_hygiene_logs(log_date);
 `)
+
+export type HygieneEntryType = 'diaper' | 'potty'
+export type DiaperType = 'wet' | 'dirty' | 'both' | 'dry'
+export type PottyResult = 'success_pee' | 'success_bm' | 'success_both' | 'tried_dry' | 'accident'
+
+export type DbChildHygieneLog = {
+  id: string
+  child_id: string
+  log_date: string
+  log_time: string
+  entry_type: HygieneEntryType
+  diaper_type: DiaperType | null
+  potty_result: PottyResult | null
+  cream_applied: number
+  notes: string
+  recorded_by: string
+  created_at: string
+  updated_at: string
+}
+
 
 export type MedicationStorage = 'room_temperature' | 'refrigerated' | 'locked_box'
 export type MedicationStatus = 'active' | 'completed' | 'cancelled'
@@ -686,8 +723,7 @@ if (!process.env.KIDOLAND_DB_PATH) {
     ON CONFLICT(id) DO UPDATE SET name = 'Adnan Godanci'
   `).run(bcrypt.hashSync('parent123', 10))
 
-  // Also ensure u-parent displays Adnan Godanci
-  db.prepare("UPDATE users SET name = 'Adnan Godanci' WHERE id = 'u-parent'").run()
+  db.prepare("UPDATE users SET name = 'Elira Krasniqi' WHERE id = 'u-parent'").run()
 
   // Additional parent accounts
   db.prepare(`
@@ -703,9 +739,9 @@ if (!process.env.KIDOLAND_DB_PATH) {
     VALUES ('u-parent4', 'Linda Morina', 'linda@kidoland.demo', ?, 'parent')
   `).run(bcrypt.hashSync('parent123', 10))
 
-  // Seed Sea Godanci and full kindergarten roster
+  // Link Sea Godanci to Adnan Godanci
   const moreChildren = [
-    { id: 'c-sea', name: 'Sea Godanci', group_name: 'Bletët / Bumblebees', parent_user_id: 'u-parent', allergies: '', photo_consent: 1 },
+    { id: 'c-sea', name: 'Sea Godanci', group_name: 'Bletët / Bumblebees', parent_user_id: 'u-adnan', allergies: '', photo_consent: 1 },
     { id: 'c-rozafa', name: 'Rozafa Kelmendi', group_name: 'Fluturat / Butterflies', parent_user_id: 'u-parent2', allergies: '', photo_consent: 1 },
     { id: 'c-dardan', name: 'Dardan Berisha', group_name: 'Fluturat / Butterflies', parent_user_id: 'u-parent2', allergies: 'Pluhur / Dust', photo_consent: 0 },
     { id: 'c-yllka', name: 'Yllka Kastrati', group_name: 'Yjet / Little Stars', parent_user_id: 'u-parent3', allergies: '', photo_consent: 1 },
@@ -1624,4 +1660,59 @@ if (healthCheckCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = '
       now,
     )
   }
+}
+
+const hygieneCount = db.prepare('SELECT COUNT(*) AS c FROM child_hygiene_logs').get() as { c: number }
+if (hygieneCount.c === 0 && db.prepare("SELECT id FROM children WHERE id = 'c-arta'").get() && db.prepare("SELECT id FROM users WHERE id = 'u-teacher'").get()) {
+  const insertHygiene = db.prepare(`
+    INSERT INTO child_hygiene_logs (id, child_id, log_date, log_time, entry_type, diaper_type, potty_result, cream_applied, notes, recorded_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const today = localCalendarDate()
+  const now = new Date().toISOString()
+
+  insertHygiene.run(
+    'hyg-arta-1',
+    'c-arta',
+    today,
+    '09:30',
+    'diaper',
+    'wet',
+    null,
+    0,
+    'Ndërrim i rregullt i mëngjesit. / Routine morning wet diaper change.',
+    'u-teacher',
+    now,
+    now,
+  )
+
+  insertHygiene.run(
+    'hyg-arta-2',
+    'c-arta',
+    today,
+    '11:45',
+    'potty',
+    null,
+    'success_pee',
+    0,
+    'Përdori tualetin me lavdërim dhe sukses! / Successfully used the potty with encouragement!',
+    'u-teacher',
+    now,
+    now,
+  )
+
+  insertHygiene.run(
+    'hyg-arta-3',
+    'c-arta',
+    today,
+    '14:45',
+    'diaper',
+    'both',
+    null,
+    1,
+    'Ndërrim pas gjumit, aplikuar krem mbrojtës. / Post-nap change, barrier cream applied.',
+    'u-teacher',
+    now,
+    now,
+  )
 }

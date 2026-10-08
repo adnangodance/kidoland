@@ -4552,3 +4552,436 @@ label.choice, .login-form label.choice { display: flex; align-items: center; gap
   margin-bottom: 0.85rem;
   font-size: 0.9rem;
 }
+
+/* ==========================================================================
+   Phase 15: Child Potty & Diaper Hygiene Tracker Module
+   ========================================================================== */
+.hygiene-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.hygiene-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .hygiene-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .hygiene-summary-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+.hygiene-summary-grid .stat-card {
+  background: var(--kd-surface, #fff);
+  border: 1px solid var(--kd-line, #e2e8f0);
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  box-sizing: border-box;
+  min-height: 40px;
+}
+
+.hygiene-summary-grid .stat-label {
+  font-size: 0.72rem;
+  color: var(--kd-muted, #64748b);
+  margin-bottom: 0.2rem;
+}
+
+.hygiene-summary-grid .stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.stat-wet {
+  color: #0284c7;
+}
+
+.stat-dirty {
+  color: #b45309;
+}
+
+.stat-success {
+  color: #16a34a;
+}
+
+.stat-accident {
+  color: #dc2626;
+}
+
+.stat-cream {
+  color: #9333ea;
+}
+
+.hygiene-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .hygiene-filter-bar {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+}
+
+.hygiene-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .hygiene-tabs {
+    width: auto;
+  }
+}
+
+.tab-btn {
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--kd-line, #cbd5e1);
+  background: var(--kd-surface, #f8fafc);
+  color: var(--kd-ink, #334155);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  min-height: 40px;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.tab-btn.active {
+  background: var(--kd-primary, #1e293b);
+  color: #fff;
+  border-color: var(--kd-primary, #1e293b);
+  font-weight: 600;
+}
+
+.filter-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .filter-controls {
+    flex-direction: row;
+    width: auto;
+  }
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .filter-group {
+    width: auto;
+  }
+}
+
+.filter-label {
+  font-size: 0.75rem;
+  color: var(--kd-muted, #64748b);
+  font-weight: 500;
+}
+
+.filter-input {
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--kd-line, #cbd5e1);
+  border-radius: 8px;
+  font-size: 0.88rem;
+  background: var(--kd-surface, #fff);
+  color: var(--kd-ink, #1e293b);
+  min-height: 40px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.hygiene-logs-container {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.hygiene-cards-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .hygiene-cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+}
+
+.hygiene-card {
+  background: var(--kd-surface, #fff);
+  border: 1.5px solid var(--kd-line, #e2e8f0);
+  border-radius: 12px;
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.hygiene-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.hygiene-card.hygiene-diaper {
+  border-left: 4px solid #0284c7;
+}
+
+.hygiene-card.hygiene-potty {
+  border-left: 4px solid #16a34a;
+}
+
+.hygiene-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.child-name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--kd-ink, #0f172a);
+  word-break: break-word;
+}
+
+.child-group {
+  font-size: 0.78rem;
+  color: var(--kd-muted, #64748b);
+}
+
+.time-and-type {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.time-badge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--kd-ink, #1e293b);
+  background: var(--kd-bg, #f1f5f9);
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+}
+
+.entry-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.badge-diaper {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.badge-potty {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.hygiene-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.status-pill {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.25rem 0.55rem;
+  border-radius: 8px;
+  display: inline-block;
+  box-sizing: border-box;
+  word-break: break-word;
+}
+
+.pill-wet {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.pill-dirty {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.pill-both {
+  background: #fae8ff;
+  color: #86198f;
+  border: 1px solid #f5d0fe;
+}
+
+.pill-dry {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.pill-success_pee,
+.pill-success_bm,
+.pill-success_both {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.pill-tried_dry {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.pill-accident {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.cream-pill {
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: #f3e8ff;
+  color: #6b21a8;
+  border: 1px solid #e9d5ff;
+  padding: 0.2rem 0.5rem;
+  border-radius: 8px;
+  display: inline-block;
+}
+
+.hygiene-notes {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.85rem;
+  color: var(--kd-ink, #334155);
+  line-height: 1.4;
+  background: var(--kd-bg, #f8fafc);
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  border-left: 3px solid var(--kd-line, #cbd5e1);
+  word-break: break-word;
+}
+
+.hygiene-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--kd-line, #f1f5f9);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.recorded-by {
+  font-size: 0.75rem;
+  color: var(--kd-muted, #94a3b8);
+}
+
+.card-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.text-btn {
+  background: none;
+  border: none;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 6px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.edit-btn {
+  color: var(--kd-primary, #0284c7);
+}
+
+.edit-btn:hover {
+  background: #f0f9ff;
+}
+
+.delete-btn {
+  color: #dc2626;
+}
+
+.delete-btn:hover {
+  background: #fef2f2;
+}

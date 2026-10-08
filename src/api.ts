@@ -1217,3 +1217,83 @@ export async function createHealthCheck(token: string, input: CreateHealthCheckI
     body: JSON.stringify(input),
   }, token)
 }
+
+export type HygieneEntryType = 'diaper' | 'potty'
+export type DiaperType = 'wet' | 'dirty' | 'both' | 'dry'
+export type PottyResult = 'success_pee' | 'success_bm' | 'success_both' | 'tried_dry' | 'accident'
+
+export type ChildHygieneLog = {
+  id: string
+  childId: string
+  childName: string
+  groupName: string
+  logDate: string
+  logTime: string
+  entryType: HygieneEntryType
+  diaperType: DiaperType | null
+  pottyResult: PottyResult | null
+  creamApplied: boolean
+  notes: string
+  recordedBy: string
+  recordedByName: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type HygieneSummaryStats = {
+  total: number
+  wetCount: number
+  dirtyCount: number
+  pottySuccessCount: number
+  accidentsCount: number
+  creamCount: number
+}
+
+export type CreateHygieneLogInput = {
+  childId: string
+  logDate: string
+  logTime: string
+  entryType: HygieneEntryType
+  diaperType?: DiaperType | null
+  pottyResult?: PottyResult | null
+  creamApplied?: boolean
+  notes?: string
+}
+
+export type UpdateHygieneLogInput = {
+  logTime?: string
+  entryType?: HygieneEntryType
+  diaperType?: DiaperType | null
+  pottyResult?: PottyResult | null
+  creamApplied?: boolean
+  notes?: string
+}
+
+export async function listHygieneLogs(token: string, options?: { childId?: string; date?: string; type?: HygieneEntryType }, signal?: AbortSignal) {
+  const query = new URLSearchParams()
+  if (options?.childId) query.set('childId', options.childId)
+  if (options?.date) query.set('date', options.date)
+  if (options?.type) query.set('type', options.type)
+  const qs = query.toString() ? `?${query}` : ''
+  return api<{ logs: ChildHygieneLog[]; summary: HygieneSummaryStats }>(`/api/hygiene-logs${qs}`, { signal }, token)
+}
+
+export async function createHygieneLog(token: string, input: CreateHygieneLogInput) {
+  return api<{ success: boolean; log: ChildHygieneLog }>('/api/hygiene-logs', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function updateHygieneLog(token: string, id: string, input: UpdateHygieneLogInput) {
+  return api<{ success: boolean; log: ChildHygieneLog }>(`/api/hygiene-logs/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token)
+}
+
+export async function deleteHygieneLog(token: string, id: string) {
+  return api<{ success: boolean }>(`/api/hygiene-logs/${id}`, {
+    method: 'DELETE',
+  }, token)
+}

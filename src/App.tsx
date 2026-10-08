@@ -25,12 +25,13 @@ import PageFinder from './PageFinder'
 import { Documents } from './Documents'
 import { SleepTracker } from './SleepTracker'
 import { MedicationHealth } from './MedicationHealth'
+import { HygieneTracker } from './HygieneTracker'
 import './App.css'
 import './theme.css'
 import './Sidebar.css'
 import './Kindergarten.css'
 
-type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents' | 'sleep' | 'medications'
+type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents' | 'sleep' | 'medications' | 'hygiene'
 
 const DEMO: { email: string; password: string; roleKey: 'roleParent' | 'roleTeacher' | 'roleDirector'; name?: string }[] = [
   { email: 'adnan@kidoland.demo', password: 'parent123', roleKey: 'roleParent', name: 'Adnan Godanci (Parent)' },
@@ -63,6 +64,7 @@ function Shell() {
       { view: 'program', label: t.navProgram, icon: 'program' },
       { view: 'meals', label: t.navMeals, icon: 'meals' },
       { view: 'sleep', label: t.navSleepTracker, icon: 'sleep' },
+      { view: 'hygiene', label: t.navHygiene, icon: 'hygiene' },
     ] },
     { label: t.navCommunity, items: [
       { view: 'messages', label: t.navMessages, icon: 'messages' },
@@ -174,6 +176,7 @@ function Shell() {
         {user && activeView === 'milestones' && <Milestones />}
         {user && activeView === 'documents' && <Documents />}
         {user && activeView === 'sleep' && <SleepTracker />}
+        {user && activeView === 'hygiene' && <HygieneTracker />}
         {user && activeView === 'medications' && <MedicationHealth />}
         {user && activeView === 'children' && <Children />}
       </main>
