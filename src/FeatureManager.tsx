@@ -414,6 +414,7 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
         <button
           type="button"
           role="tab"
+          aria-label={t.roleDirectorLabel}
           aria-selected={selectedRole === 'director'}
           className={`role-tab-card ${selectedRole === 'director' ? 'active' : ''}`}
           onClick={() => setSelectedRole('director')}
@@ -430,6 +431,7 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
         <button
           type="button"
           role="tab"
+          aria-label={t.roleTeacherLabel}
           aria-selected={selectedRole === 'teacher'}
           className={`role-tab-card ${selectedRole === 'teacher' ? 'active' : ''}`}
           onClick={() => setSelectedRole('teacher')}
@@ -446,6 +448,7 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
         <button
           type="button"
           role="tab"
+          aria-label={t.roleParentLabel}
           aria-selected={selectedRole === 'parent'}
           className={`role-tab-card ${selectedRole === 'parent' ? 'active' : ''}`}
           onClick={() => setSelectedRole('parent')}

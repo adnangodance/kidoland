@@ -94,7 +94,15 @@ async function login(role: string, email = `${role}@kidoland.demo`, password = `
   await until(() => main().querySelector('.metrics'), `login ${role}`)
   assert(main().textContent?.includes(role === 'director' ? translations.en.dashDirector : role === 'teacher' ? translations.en.dashTeacher : translations.en.dashParent), `${role} login opens authorized dashboard`)
 }
-async function logout() { button(translations.en.logout); await until(() => !document.querySelector('nav [aria-current]')); assert(!main().querySelector('.roster-card, .attendance-row, .metrics'), 'logout removes account records immediately') }
+async function loginAdmin() {
+  if (!main().querySelector('input[type=email]')) button(translations.en.ctaStart)
+  await until(() => main().querySelector('input[type=email]'))
+  await set(translations.en.loginEmail, 'admin@kidoland.demo'); await set(translations.en.loginPassword, 'admin123')
+  button(translations.en.loginSubmit, main())
+  await until(() => main().querySelector('.feature-manager-panel'), 'login admin')
+  assert(main().textContent?.includes(translations.en.featureManagerTitle), 'admin login opens feature permissions manager')
+}
+async function logout() { button(translations.en.logout); await until(() => !document.querySelector('nav [aria-current]')); assert(!main().querySelector('.roster-card, .attendance-row, .metrics, .feature-manager-panel'), 'logout removes account records immediately') }
 function fit(label: string) {
   const visible = (element: HTMLElement) => !element.closest('[inert]') && element.getBoundingClientRect().width > 0
   const navigation = document.querySelector<HTMLElement>('.sidebar .nav-links')
@@ -509,6 +517,14 @@ async function run() {
   await login('parent')
   assert(euro(Number.MAX_SAFE_INTEGER, 'en').replace(/[^0-9]/g, '') === '9007199254740991' && euro(Number.MAX_SAFE_INTEGER, 'sq', 'EURO').replace(/[^0-9]/g, '') === '9007199254740991', 'boundary integer cents format exactly in English and Albanian')
   assert([...main().querySelectorAll('.metrics article')].find((card) => card.textContent?.includes(translations.en.dashUnpaid))?.textContent?.includes('EURO'), 'dashboard retains separate pending legacy-currency balance')
+  await logout(); await loginAdmin()
+  await until(() => main().querySelector('.feature-card'))
+  assert(main().textContent?.includes(translations.en.featureManagerTitle), 'superadmin login opens feature permissions manager'); fit('superadmin feature manager'); await capture('feature-manager')
+  assert(Boolean(main().querySelector('.role-selector-bar')), 'superadmin sees role selector tabs')
+  assert(Boolean(main().querySelector('.features-stat-grid')), 'superadmin sees features overview statistics')
+  button(translations.en.roleParentLabel, main()); await until(() => main().querySelector('.role-tab-card.active'))
+  assert(Boolean(main().querySelector('.role-tab-card.active')), 'superadmin switches target role tab')
+  await logout()
   output.dataset.result = 'passed'; output.textContent = `${results.join('\n')}\n${results.length} full-app checks passed.`
 }
 void run().then(() => originalFetch('/__pilot_results', { method: 'POST', body: JSON.stringify({ ok: true, output: output.textContent }) })).catch((error) => { output.dataset.result = 'failed'; output.textContent += `\nFAIL: ${String(error)}`; return originalFetch('/__pilot_results', { method: 'POST', body: JSON.stringify({ ok: false, output: output.textContent }) }) })

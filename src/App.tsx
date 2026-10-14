@@ -89,7 +89,11 @@ function Shell() {
     }
   }, [token, user?.role])
 
-  const activeView = user && (view === 'home' || view === 'login') ? (user.role === 'superadmin' ? 'features' : 'dashboard') : view
+  const activeView = user?.role === 'superadmin' && (view === 'home' || view === 'login' || view === 'dashboard')
+    ? 'features'
+    : user && (view === 'home' || view === 'login')
+    ? 'dashboard'
+    : view
   const isFeatureDisabled = Boolean(
     user &&
     user.role !== 'superadmin' &&
@@ -188,7 +192,7 @@ function Shell() {
   const peek = () => { keepPeek(); if (!narrow && sidebarCollapsed) setSidebarPeeking(true) }
   const leavePeek = () => { keepPeek(); peekTimer.current = setTimeout(() => setSidebarPeeking(false), 150) }
   const toggleSidebar = () => { keepPeek(); setSidebarPeeking(false); if (narrow) setMenuOpen((open) => !open); else setSidebarCollapsed((collapsed) => !collapsed) }
-  const brand = <button type="button" className="brand" onClick={() => go(user ? 'dashboard' : 'home')}><span className="brand-mark"><BrandMark /></span>{t.brand}<span className="brand-dot" aria-hidden="true">.</span></button>
+  const brand = <button type="button" className="brand" onClick={() => go(user ? (user.role === 'superadmin' ? 'features' : 'dashboard') : 'home')}><span className="brand-mark"><BrandMark /></span>{t.brand}<span className="brand-dot" aria-hidden="true">.</span></button>
 
   return (
     <div className={`app ${user ? `workspace ${narrow || sidebarCollapsed ? 'sidebar-collapsed' : ''}` : 'public-app'}`}>
