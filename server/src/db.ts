@@ -937,6 +937,37 @@ if (!process.env.KIDOLAND_DB_PATH) {
     INSERT OR IGNORE INTO invoice_items (id, invoice_id, description, amount_cents, position)
     VALUES (?, ?, ?, ?, ?)
   `).run('item-sea-tuition', 'inv-sea-oct', 'tuition', 18000, 0)
+
+  // Seed authorized pickups for Sea Godanci
+  const nowIso = new Date().toISOString()
+  db.prepare(`
+    INSERT OR IGNORE INTO authorized_pickups (id, child_id, name, relationship, phone, is_emergency, created_at)
+    VALUES ('pk-sea-1', 'c-sea', 'Adnan Godanci', 'Father (Babai)', '+383 44 123 456', 1, ?)
+  `).run(nowIso)
+  db.prepare(`
+    INSERT OR IGNORE INTO authorized_pickups (id, child_id, name, relationship, phone, is_emergency, created_at)
+    VALUES ('pk-sea-2', 'c-sea', 'Fatime Godanci', 'Grandmother (Gjyshja)', '+383 44 999 888', 1, ?)
+  `).run(nowIso)
+
+  // Seed medical profile for Sea Godanci
+  db.prepare(`
+    INSERT OR IGNORE INTO child_medical_profiles (child_id, pediatrician_name, pediatrician_phone, blood_type, chronic_conditions, emergency_medications, notes, updated_at)
+    VALUES ('c-sea', 'Dr. Ilir Krasniqi', '+383 44 222 333', 'A+', '', '', 'Health check up to date. Excellent vitality, highly active, and loves dancing.', ?)
+  `).run(nowIso)
+
+  // Seed milestone achievements for Sea Godanci
+  db.prepare(`
+    INSERT OR IGNORE INTO child_milestone_records (id, child_id, milestone_id, status, observed_date, notes, evaluated_by, updated_at)
+    VALUES ('ms-sea-1', 'c-sea', 'ms-lang-1', 'mastered', ?, 'Speaks with rich expressive vocabulary and enthusiastic storytelling.', 'u-teacher', ?)
+  `).run(today, nowIso)
+  db.prepare(`
+    INSERT OR IGNORE INTO child_milestone_records (id, child_id, milestone_id, status, observed_date, notes, evaluated_by, updated_at)
+    VALUES ('ms-sea-2', 'c-sea', 'ms-cog-1', 'mastered', ?, 'Easily counts objects and accurately identifies colorful geometrical shapes.', 'u-teacher', ?)
+  `).run(today, nowIso)
+  db.prepare(`
+    INSERT OR IGNORE INTO child_milestone_records (id, child_id, milestone_id, status, observed_date, notes, evaluated_by, updated_at)
+    VALUES ('ms-sea-3', 'c-sea', 'ms-lang-3', 'achieved', ?, 'Actively participates and sings aloud during music and circle time.', 'u-teacher', ?)
+  `).run(today, nowIso)
 }
 
 const reportCount = db.prepare('SELECT COUNT(*) AS c FROM reports').get() as { c: number }

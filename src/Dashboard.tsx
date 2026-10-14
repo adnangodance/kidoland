@@ -11,6 +11,7 @@ import { SeaGodanciBadge } from './child-highlight'
 import { isSeaGodanci } from './child-highlight-util'
 
 import Icon, { type IconName } from './Icon'
+import ChildProfileModal from './ChildProfileModal'
 
 type Destination = 'attendance' | 'reports' | 'payments' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents' | 'sleep' | 'timeline'
 
@@ -42,6 +43,7 @@ export default function Dashboard({ go }: { go: (view: Destination, context?: { 
   const [error, setError] = useState(false)
   const [retry, setRetry] = useState(0)
   const [search, setSearch] = useState('')
+  const [selectedProfileChildId, setSelectedProfileChildId] = useState<string | null>(null)
   useEffect(() => {
     let cancelled = false
     setSummary(null); setError(false)
@@ -90,8 +92,9 @@ export default function Dashboard({ go }: { go: (view: Destination, context?: { 
           <div className="card-avatar-heading"><ChildAvatar name={child.name} size={44} /><div><h2>{child.name} <SeaGodanciBadge name={child.name} /></h2><p className="card-subtitle">{child.groupName}</p></div><Icon name="leaf" size={22} /></div>
           {child.allergies && <p className="allergy-badge"><span aria-hidden="true">⚠️ </span><strong>{t.allergies}:</strong> {child.allergies}</p>}
           <div className="card-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button className="btn ghost" style={{ flex: '1 1 120px' }} onClick={() => go('reports', { childId: child.id, date })}>{t.dashRead}<Icon name="arrow" size={16} /></button>
-            <button className="btn ghost" style={{ flex: '1 1 120px' }} onClick={() => go('timeline', { childId: child.id, date })}>{t.timelineViewBtn}<Icon name="clock" size={16} /></button>
+            <button className="btn ghost" style={{ flex: '1 1 110px' }} onClick={() => go('reports', { childId: child.id, date })}>{t.dashRead}<Icon name="arrow" size={16} /></button>
+            <button className="btn ghost" style={{ flex: '1 1 110px' }} onClick={() => go('timeline', { childId: child.id, date })}>{t.timelineViewBtn}<Icon name="clock" size={16} /></button>
+            <button className="btn secondary" style={{ flex: '1 1 110px' }} onClick={() => setSelectedProfileChildId(child.id)}><Icon name="children" size={16} />{t.viewProfileBtn}</button>
           </div>
         </article>)}</div>
       </> : <div className="dashboard-work-grid">
@@ -113,11 +116,23 @@ export default function Dashboard({ go }: { go: (view: Destination, context?: { 
           <div className="register-child"><ChildAvatar name={child.name} size={48} /><div><h3>{child.name} <SeaGodanciBadge name={child.name} /></h3><small>{child.groupName}</small></div></div>
           {child.allergies && <p className="allergy-badge"><span aria-hidden="true">⚠️ </span><strong>{t.allergies}:</strong> {child.allergies}</p>}
           <div className="day-child-status"><div><span>{t.attendanceTitle}</span><span className={`attendance-status ${child.attendanceStatus || 'unmarked'}`}>{statusLabel(child.attendanceStatus)}</span></div><div><span>{t.navReports}</span><span className={child.hasReport ? 'record-ready' : 'record-waiting'}><Icon name={child.hasReport ? 'check' : 'clock'} size={14} />{child.hasReport ? t.reportReady : t.notWritten}</span></div></div>
-          <button type="button" className="row-action" aria-label={`${child.hasReport ? t.dashRead : t.dashWrite} · ${child.name}`} onClick={() => go('reports', { childId: child.id, date })}>{child.hasReport ? t.dashRead : t.dashWrite}<Icon name="arrow" size={16} /></button>
+          <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+            <button type="button" className="btn ghost small-btn" style={{ flex: '1 1 90px' }} onClick={() => setSelectedProfileChildId(child.id)}><Icon name="children" size={14} />{t.viewProfileBtn}</button>
+            <button type="button" className="row-action" style={{ flex: '1 1 110px' }} aria-label={`${child.hasReport ? t.dashRead : t.dashWrite} · ${child.name}`} onClick={() => go('reports', { childId: child.id, date })}>{child.hasReport ? t.dashRead : t.dashWrite}<Icon name="arrow" size={16} /></button>
+          </div>
         </article>)}</div>
         {!children.length && <div className="empty-hint"><p>{summary.children ? t.noSearchResults : t.attendanceEmpty}</p>{summary.children > 0 && <button className="btn ghost" onClick={() => setSearch('')}>{t.clearSearch}</button>}</div>}
       </section>}
     </>}
     <div className="section-title"><h2>{t.quickActions}</h2></div><div className="quick-actions">{shortcuts.map((shortcut) => <button className="quick-action" aria-label={shortcut.label} key={shortcut.view} onClick={() => go(shortcut.view, { date })}><span className="quick-icon"><Icon name={shortcut.icon} size={21} /></span><span><strong>{shortcut.label}</strong><small>{shortcut.body}</small></span><Icon name="arrow" size={17} /></button>)}</div>
+    {selectedProfileChildId && (
+      <ChildProfileModal
+        childId={selectedProfileChildId}
+        onClose={() => setSelectedProfileChildId(null)}
+        onNavigateToTimeline={(cId) => go('timeline', { childId: cId, date })}
+        onNavigateToReport={(cId) => go('reports', { childId: cId, date })}
+        onNavigateToAttendance={() => go('attendance', { date })}
+      />
+    )}
   </section>
 }

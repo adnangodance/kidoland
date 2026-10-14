@@ -1609,3 +1609,55 @@ test('child daily timeline & live feed API: chronological events, summaries, and
   }
 })
 
+test('child 360° profile & family showcase API: complete child overview and parent isolation', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const director = await f.login('director')
+    const parent = await f.login('parent')
+
+    // 1. Director fetches child profile for Arta
+    const artaRes = await request('children/c-arta/profile', director)
+    assert.equal(artaRes.status, 200)
+    assert.equal(artaRes.data.child.id, 'c-arta')
+    assert.equal(artaRes.data.child.name, 'Arta Krasniqi')
+    assert.equal(artaRes.data.parent.name, 'Elira Krasniqi')
+    assert.ok(Array.isArray(artaRes.data.pickups))
+    assert.ok(artaRes.data.attendance)
+    assert.ok(Array.isArray(artaRes.data.recentReports))
+    assert.ok(artaRes.data.milestones)
+
+    // 2. Parent fetches their own linked child profile
+    const ownRes = await request('children/c-arta/profile', parent)
+    assert.equal(ownRes.status, 200)
+    assert.equal(ownRes.data.child.id, 'c-arta')
+
+    // 3. Parent cannot fetch foreign child profile (403 forbidden)
+    const secondParentRes = await request('parents', director, { name: 'Second Parent', email: 'second@profile.test', password: 'password123' })
+    assert.equal(secondParentRes.status, 201)
+    const foreignChildRes = await request('children', director, { name: 'Foreign Child', groupName: 'Group B', parentUserId: secondParentRes.data.parent.id })
+    assert.equal(foreignChildRes.status, 201)
+
+    const forbiddenRes = await request(`children/${foreignChildRes.data.child.id}/profile`, parent)
+    assert.equal(forbiddenRes.status, 403)
+
+    // 4. Non-existent child returns 404
+    const notFoundRes = await request('children/c-non-existent-999/profile', director)
+    assert.equal(notFoundRes.status, 404)
+
+    // 5. Sea Godanci & Adnan Godanci VIP detection
+    const adnanParentRes = await request('parents', director, { name: 'Adnan Godanci', email: 'adnan.test@kidoland.demo', password: 'password123' })
+    assert.equal(adnanParentRes.status, 201)
+    const seaRes = await request('children', director, { name: 'Sea Godanci', groupName: 'Bletët / Bumblebees', parentUserId: adnanParentRes.data.parent.id })
+    assert.equal(seaRes.status, 201)
+
+    const seaProfile = await request(`children/${seaRes.data.child.id}/profile`, director)
+    assert.equal(seaProfile.status, 200)
+    assert.equal(seaProfile.data.child.isSpecial, true)
+    assert.equal(seaProfile.data.parent.phone, '+383 44 123 456')
+  } finally {
+    await f.dispose()
+  }
+})
+

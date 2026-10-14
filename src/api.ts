@@ -1383,3 +1383,86 @@ export async function resetFeaturePermissions(token: string) {
     method: 'POST',
   }, token)
 }
+
+export type ChildProfileChild = {
+  id: string
+  name: string
+  groupName: string
+  parentUserId: string
+  photoConsent: boolean
+  allergies: string
+  isSpecial: boolean
+}
+
+export type ChildProfileParent = {
+  id: string
+  name: string
+  email: string
+  phone: string
+}
+
+export type ChildProfilePickup = {
+  id: string
+  name: string
+  relationship: string
+  phone: string
+  isEmergency: boolean
+}
+
+export type ChildProfileMedical = {
+  pediatricianName: string
+  pediatricianPhone: string
+  bloodType: string
+  chronicConditions: string
+  emergencyMedications: string
+  notes: string
+} | null
+
+export type ChildProfileMedication = {
+  id: string
+  medicationName: string
+  dosage: string
+  frequencySchedule: string
+  instructions: string
+}
+
+export type ChildProfileAttendance = {
+  totalPresent: number
+  totalAbsent: number
+  streak: number
+  history: { date: string; status: 'present' | 'absent' }[]
+}
+
+export type ChildProfileRecentReport = {
+  id: string
+  date: string
+  mood: string
+  meals: string
+  nap: string
+  activities: string
+  note: string
+  photoUrl?: string | null
+}
+
+export type ChildProfileMilestones = {
+  masteredCount: number
+  achievedCount: number
+  emergingCount: number
+  totalTracked: number
+  sampleMastered: { status: string; domain: string; titleEn: string; titleSq: string }[]
+}
+
+export type ChildProfileResponse = {
+  child: ChildProfileChild
+  parent: ChildProfileParent | null
+  pickups: ChildProfilePickup[]
+  medical: ChildProfileMedical
+  activeMedications: ChildProfileMedication[]
+  attendance: ChildProfileAttendance
+  recentReports: ChildProfileRecentReport[]
+  milestones: ChildProfileMilestones
+}
+
+export async function getChildProfile(childId: string, token: string, signal?: AbortSignal) {
+  return api<ChildProfileResponse>(`/api/children/${encodeURIComponent(childId)}/profile`, { signal }, token)
+}

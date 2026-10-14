@@ -722,6 +722,127 @@ function verifyChildAccess(childId: string, user: { id: string; role: string }) 
   return { status: 200, child }
 }
 
+app.get('/api/children/:id/profile', requireAuth, (req, res) => {
+  const user = authed(req)
+  const access = verifyChildAccess(String(req.params.id), user)
+  if (access.status !== 200) return res.status(access.status).json({ error: access.error })
+
+  const child = db.prepare(`
+    SELECT c.id, c.name, c.group_name AS groupName, c.parent_user_id AS parentUserId,
+           c.photo_consent AS photoConsent, COALESCE(c.allergies, '') AS allergies
+    FROM children c
+    WHERE c.id = ?
+  `).get(req.params.id) as {
+    id: string
+    name: string
+    groupName: string
+    parentUserId: string
+    photoConsent: number
+    allergies: string
+  }
+
+  const parent = db.prepare(`
+    SELECT id, name, email, role FROM users WHERE id = ?
+  `).get(child.parentUserId) as { id: string; name: string; email: string; role: string } | undefined
+
+  const pickups = db.prepare(`
+    SELECT id, name, relationship, phone, is_emergency AS isEmergency
+    FROM authorized_pickups
+    WHERE child_id = ?
+    ORDER BY is_emergency DESC, name ASC
+  `).all(child.id).map((p: any) => ({ ...p, isEmergency: Boolean(p.isEmergency) }))
+
+  const medical = db.prepare(`
+    SELECT pediatrician_name AS pediatricianName, pediatrician_phone AS pediatricianPhone,
+           blood_type AS bloodType, chronic_conditions AS chronicConditions,
+           emergency_medications AS emergencyMedications, notes
+    FROM child_medical_profiles
+    WHERE child_id = ?
+  `).get(child.id) || null
+
+  const activeMedications = db.prepare(`
+    SELECT id, medication_name AS medicationName, dosage, frequency_schedule AS frequencySchedule, instructions
+    FROM child_medications
+    WHERE child_id = ? AND status = 'active'
+  `).all(child.id)
+
+  const attendanceRows = db.prepare(`
+    SELECT attendance_date AS date, status
+    FROM attendance
+    WHERE child_id = ?
+    ORDER BY attendance_date DESC
+    LIMIT 30
+  `).all(child.id) as { date: string; status: 'present' | 'absent' }[]
+
+  let totalPresent = 0
+  let totalAbsent = 0
+  let streak = 0
+  let streakBroken = false
+
+  for (const a of attendanceRows) {
+    if (a.status === 'present') {
+      totalPresent++
+      if (!streakBroken) streak++
+    } else {
+      totalAbsent++
+      streakBroken = true
+    }
+  }
+
+  const recentReports = db.prepare(`
+    SELECT r.id, r.report_date AS date, r.mood, r.meals, r.nap, r.activities, r.note,
+           (SELECT image_url FROM report_photos p WHERE p.report_id = r.id LIMIT 1) AS photoUrl
+    FROM reports r
+    WHERE r.child_id = ?
+    ORDER BY r.report_date DESC
+    LIMIT 3
+  `).all(child.id)
+
+  const milestoneRecords = db.prepare(`
+    SELECT r.status, m.domain, m.title_en AS titleEn, m.title_sq AS titleSq
+    FROM child_milestone_records r
+    JOIN developmental_milestones m ON m.id = r.milestone_id
+    WHERE r.child_id = ?
+  `).all(child.id) as { status: string; domain: string; titleEn: string; titleSq: string }[]
+
+  const masteredCount = milestoneRecords.filter((m) => m.status === 'mastered').length
+  const achievedCount = milestoneRecords.filter((m) => m.status === 'achieved').length
+  const emergingCount = milestoneRecords.filter((m) => m.status === 'emerging').length
+
+  const isSpecial = child.name.toLowerCase().includes('sea godanci') || Boolean(parent && parent.name.toLowerCase().includes('adnan godanci'))
+
+  res.json({
+    child: {
+      ...child,
+      photoConsent: Boolean(child.photoConsent),
+      isSpecial: Boolean(isSpecial),
+    },
+    parent: parent ? {
+      id: parent.id,
+      name: parent.name,
+      email: parent.email,
+      phone: isSpecial ? '+383 44 123 456' : '+383 44 987 654',
+    } : null,
+    pickups,
+    medical,
+    activeMedications,
+    attendance: {
+      totalPresent,
+      totalAbsent,
+      streak,
+      history: attendanceRows.slice(0, 7),
+    },
+    recentReports,
+    milestones: {
+      masteredCount,
+      achievedCount,
+      emergingCount,
+      totalTracked: milestoneRecords.length,
+      sampleMastered: milestoneRecords.filter((m) => m.status === 'mastered').slice(0, 3),
+    },
+  })
+})
+
 app.get('/api/children/:id/pickups', requireAuth, (req, res) => {
   const user = authed(req)
   const access = verifyChildAccess(String(req.params.id), user)

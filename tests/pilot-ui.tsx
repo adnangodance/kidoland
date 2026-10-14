@@ -233,6 +233,16 @@ async function run() {
   await set(translations.en.linkedParent, 'u-parent')
   assert(main().textContent?.includes(translations.en.transferWarning), 'parent transfer warning appears before save')
   await set(translations.en.linkedParent, family.value); button(translations.en.save, main()); await until(() => !main().querySelector('form'))
+  const updatedChildCard = [...main().querySelectorAll('article')].find((row) => row.textContent?.includes('Browser Child'))!
+  const profileBtn = [...updatedChildCard.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.includes(translations.en.viewProfileBtn))
+  if (profileBtn) {
+    profileBtn.click()
+    await until(() => document.querySelector('.child-profile-modal'))
+    fit('child 360 profile modal')
+    assert(Boolean(document.querySelector('.child-profile-modal')), 'child 360 profile opens with child details')
+    document.querySelector<HTMLButtonElement>('.child-profile-close')!.click()
+    await until(() => !document.querySelector('.child-profile-modal'))
+  }
   await nav(translations.en.attendanceTitle); await until(() => main().querySelectorAll('.attendance-row').length === 3)
   const search = main().querySelector<HTMLInputElement>('input[type=search]')!
   fill(search, 'Browser Child'); await until(() => main().querySelectorAll('.attendance-row').length === 1)

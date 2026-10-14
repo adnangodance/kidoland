@@ -28,9 +28,9 @@ import { localCalendarDate } from './attendance-date'
 import ChildAvatar from './ChildAvatar'
 import { SeaGodanciBadge } from './child-highlight'
 import { isSeaGodanci } from './child-highlight-util'
+import ChildProfileModal from './ChildProfileModal'
 
-
-function Consent({ child }: { child: Child }) {
+function Consent({ child, onOpenProfile }: { child: Child; onOpenProfile: (id: string) => void }) {
   const { token } = useAuth()
   const { t } = useI18n()
   const alive = useAlive()
@@ -124,7 +124,10 @@ function Consent({ child }: { child: Child }) {
       <label className="choice"><input type="radio" name={`consent-${child.id}`} checked={draft} onChange={() => { setDraft(true); setSuccess(false) }} />{t.allowPhotos}</label>
       <label className="choice"><input type="radio" name={`consent-${child.id}`} checked={!draft} onChange={() => { setDraft(false); setSuccess(false) }} />{t.denyPhotos}</label>
     </fieldset>
-    <button type="button" className="btn primary" disabled={busy} onClick={() => void save()}>{busy ? t.attendanceSaving : t.saveChoice}</button>
+    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.4rem' }}>
+      <button type="button" className="btn primary" disabled={busy} onClick={() => void save()}>{busy ? t.attendanceSaving : t.saveChoice}</button>
+      <button type="button" className="btn secondary" onClick={() => onOpenProfile(child.id)}>{t.viewProfileBtn}</button>
+    </div>
     {success && <p role="status">{t.attendanceSaved}</p>}
     {error && <p role="alert" className="form-error">{t.saveError} <button type="button" onClick={() => void save()}>{t.attendanceRetry}</button></p>}
 
@@ -197,12 +200,14 @@ function StaffChildCard({
   parentName,
   busy,
   onEdit,
+  onOpenProfile,
 }: {
   child: Child
   director: boolean
   parentName?: string
   busy: boolean
   onEdit: () => void
+  onOpenProfile: (id: string) => void
 }) {
   const { token } = useAuth()
   const { t } = useI18n()
@@ -278,6 +283,9 @@ function StaffChildCard({
       <div className="card-actions-row">
         <button type="button" className="btn ghost small-btn" onClick={() => setExpanded(!expanded)}>
           {expanded ? '▲ ' : '▼ '} {t.authorizedPickups} {logs.length > 0 ? `(${logs[0].action === 'check_in' ? '🟢' : '👋'})` : ''}
+        </button>
+        <button type="button" className="btn secondary small-btn" onClick={() => onOpenProfile(child.id)}>
+          {t.viewProfileBtn}
         </button>
         {director && (
           <button className="btn ghost small-btn" disabled={busy} onClick={onEdit}>
@@ -370,6 +378,7 @@ export default function Children() {
   const [draft, setDraft] = useState<ChildInput>({ name: '', groupName: '', parentUserId: '' })
   const [parentOpen, setParentOpen] = useState(false)
   const [parentDraft, setParentDraft] = useState({ name: '', email: '', password: '' })
+  const [selectedProfileChildId, setSelectedProfileChildId] = useState<string | null>(null)
   async function reload() {
     if (!token) return
     const version = ++loads.current
@@ -447,7 +456,7 @@ export default function Children() {
     </>}
     {!loading && error !== 'load' && !children.length && <p>{t.attendanceEmpty}</p>}
     {!loading && children.map((child) => user?.role === 'parent' ? (
-      <Consent key={child.id} child={child} />
+      <Consent key={child.id} child={child} onOpenProfile={setSelectedProfileChildId} />
     ) : (
       <StaffChildCard
         key={child.id}
@@ -455,6 +464,7 @@ export default function Children() {
         director={director}
         parentName={parents.find((p) => p.id === child.parentUserId)?.name}
         busy={busy}
+        onOpenProfile={setSelectedProfileChildId}
         onEdit={() => {
           setEditing(child)
           setDraft({ name: child.name, groupName: child.groupName, parentUserId: child.parentUserId, allergies: child.allergies || '' })
@@ -462,5 +472,11 @@ export default function Children() {
         }}
       />
     ))}
+    {selectedProfileChildId && (
+      <ChildProfileModal
+        childId={selectedProfileChildId}
+        onClose={() => setSelectedProfileChildId(null)}
+      />
+    )}
   </section>
 }
