@@ -1,3 +1,4 @@
+/* eslint-disable react/set-state-in-effect */
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { AuthProvider } from './auth'
 import { useAuth } from './auth-context'
@@ -26,14 +27,18 @@ import { Documents } from './Documents'
 import { SleepTracker } from './SleepTracker'
 import { MedicationHealth } from './MedicationHealth'
 import { HygieneTracker } from './HygieneTracker'
+import { DailyTimeline } from './Timeline'
+import { FeatureManager } from './FeatureManager'
+import { getFeaturePermissions } from './api'
 import './App.css'
 import './theme.css'
 import './Sidebar.css'
 import './Kindergarten.css'
 
-type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents' | 'sleep' | 'medications' | 'hygiene'
+type View = 'home' | 'login' | 'dashboard' | 'reports' | 'payments' | 'attendance' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents' | 'sleep' | 'medications' | 'hygiene' | 'timeline' | 'features'
 
-const DEMO: { email: string; password: string; roleKey: 'roleParent' | 'roleTeacher' | 'roleDirector'; name?: string }[] = [
+const DEMO: { email: string; password: string; roleKey: 'roleParent' | 'roleTeacher' | 'roleDirector' | 'roleSuperAdmin'; name?: string }[] = [
+  { email: 'admin@kidoland.demo', password: 'admin123', roleKey: 'roleSuperAdmin', name: 'Super Admin' },
   { email: 'adnan@kidoland.demo', password: 'parent123', roleKey: 'roleParent', name: 'Adnan Godanci (Parent)' },
   { email: 'parent@kidoland.demo', password: 'parent123', roleKey: 'roleParent' },
   { email: 'teacher@kidoland.demo', password: 'teacher123', roleKey: 'roleTeacher' },
@@ -53,10 +58,46 @@ function Shell() {
   const [searchOwner, setSearchOwner] = useState<string | null>(null)
   const menuButton = useRef<HTMLButtonElement>(null)
   const [reportContext, setReportContext] = useState<{ childId?: string; date?: string }>({})
-  const activeView = user && (view === 'home' || view === 'login') ? 'dashboard' : view
+  const [enabledFeatures, setEnabledFeatures] = useState<string[] | null>(null)
+
+  const reloadFeatures = () => {
+    if (token) {
+      getFeaturePermissions(token)
+        .then((res) => {
+          if (res.enabledFeatures) {
+            setEnabledFeatures(res.enabledFeatures)
+          }
+        })
+        .catch(() => {})
+    }
+  }
+
+  useEffect(() => {
+    if (!token) return
+    let active = true
+    getFeaturePermissions(token)
+      .then((res) => {
+        if (active && res.enabledFeatures) {
+          setEnabledFeatures(res.enabledFeatures)
+        }
+      })
+      .catch(() => {
+        // Fallback: all enabled
+      })
+    return () => {
+      active = false
+    }
+  }, [token, user?.role])
+
+  const activeView = user && (view === 'home' || view === 'login') ? (user.role === 'superadmin' ? 'features' : 'dashboard') : view
+  const isFeatureDisabled = Boolean(
+    user &&
+    user.role !== 'superadmin' &&
+    (activeView === 'features' || (enabledFeatures && activeView !== 'dashboard' && !enabledFeatures.includes(activeView)))
+  )
   const sidebarVisible = narrow ? menuOpen : !sidebarCollapsed || sidebarPeeking
-  const roleLabel = user?.role === 'parent' ? t.roleParent : user?.role === 'teacher' ? t.roleTeacher : t.roleDirector
-  const navGroups: { label: string; items: { view: View; label: string; icon: IconName }[] }[] = [
+  const roleLabel = user?.role === 'parent' ? t.roleParent : user?.role === 'teacher' ? t.roleTeacher : user?.role === 'superadmin' ? t.roleSuperAdmin : t.roleDirector
+  const rawNavGroups: { label: string; items: { view: View; label: string; icon: IconName }[] }[] = [
     { label: t.navDaily, items: [
       { view: 'dashboard', label: t.navDashboard, icon: 'dashboard' },
       { view: 'attendance', label: t.attendanceTitle, icon: 'attendance' },
@@ -65,6 +106,7 @@ function Shell() {
       { view: 'meals', label: t.navMeals, icon: 'meals' },
       { view: 'sleep', label: t.navSleepTracker, icon: 'sleep' },
       { view: 'hygiene', label: t.navHygiene, icon: 'hygiene' },
+      { view: 'timeline', label: t.navTimeline, icon: 'clock' },
     ] },
     { label: t.navCommunity, items: [
       { view: 'messages', label: t.navMessages, icon: 'messages' },
@@ -82,7 +124,23 @@ function Shell() {
       { view: 'milestones', label: t.navMilestones, icon: 'milestones' },
       { view: 'staff', label: t.navStaffShifts, icon: 'staff' },
     ] },
+    ...(user?.role === 'superadmin' ? [{
+      label: t.navSystemAdmin,
+      items: [
+        { view: 'features' as View, label: t.navFeatures, icon: 'superadmin' as IconName },
+      ],
+    }] : []),
   ]
+
+  const navGroups = rawNavGroups.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => {
+      if (user?.role === 'superadmin') return true
+      if (item.view === 'features') return false
+      if (!enabledFeatures) return true
+      return enabledFeatures.includes(item.view)
+    }),
+  })).filter((group) => group.items.length > 0)
   const currentLabel = navGroups.flatMap((group) => group.items).find((item) => item.view === activeView)?.label
 
   useEffect(() => { document.documentElement.lang = lang }, [lang])
@@ -160,25 +218,36 @@ function Shell() {
         {bootError && <section className="panel"><p role="alert">{t.loadError}</p><div className="actions"><button className="btn primary" onClick={retryBoot}>{t.attendanceRetry}</button><button className="btn ghost" onClick={logout}>{t.logout}</button></div></section>}
         {!user && !bootError && activeView !== 'home' && <Login onSuccess={() => go('dashboard')} />}
         {!user && !bootError && activeView === 'home' && <Home onLogin={() => go('login')} />}
-        {user && activeView === 'dashboard' && <Dashboard go={go} />}
-        {user && activeView === 'attendance' && <Attendance initialDate={reportContext.date} />}
-        {user && activeView === 'reports' && <Reports initialChildId={reportContext.childId} initialDate={reportContext.date} />}
-        {user && activeView === 'program' && <Program initialDate={reportContext.date} />}
-        {user && activeView === 'announcements' && <Announcements />}
-        {user && activeView === 'messages' && <Messages />}
-        {user && activeView === 'payments' && <Payments />}
-        {user && activeView === 'absences' && <Absences />}
-        {user && activeView === 'meals' && <Meals />}
-        {user && activeView === 'incidents' && <Incidents />}
-        {user && activeView === 'moments' && <Moments />}
-        {user && activeView === 'events' && <Events />}
-        {user && activeView === 'staff' && <StaffShifts />}
-        {user && activeView === 'milestones' && <Milestones />}
-        {user && activeView === 'documents' && <Documents />}
-        {user && activeView === 'sleep' && <SleepTracker />}
-        {user && activeView === 'hygiene' && <HygieneTracker />}
-        {user && activeView === 'medications' && <MedicationHealth />}
-        {user && activeView === 'children' && <Children />}
+        {user && isFeatureDisabled && (
+          <section className="panel feature-disabled-panel">
+            <h1 tabIndex={-1}>{currentLabel || t.navFeatures}</h1>
+            <p role="alert" className="notice">{t.featureDisabledNotice}</p>
+            <div className="actions" style={{ marginTop: '1rem' }}>
+              <button className="btn primary" onClick={() => go('dashboard')}>{t.navDashboard}</button>
+            </div>
+          </section>
+        )}
+        {user && !isFeatureDisabled && activeView === 'dashboard' && <Dashboard go={go} />}
+        {user && !isFeatureDisabled && activeView === 'attendance' && <Attendance initialDate={reportContext.date} />}
+        {user && !isFeatureDisabled && activeView === 'reports' && <Reports initialChildId={reportContext.childId} initialDate={reportContext.date} />}
+        {user && !isFeatureDisabled && activeView === 'program' && <Program initialDate={reportContext.date} />}
+        {user && !isFeatureDisabled && activeView === 'announcements' && <Announcements />}
+        {user && !isFeatureDisabled && activeView === 'messages' && <Messages />}
+        {user && !isFeatureDisabled && activeView === 'payments' && <Payments />}
+        {user && !isFeatureDisabled && activeView === 'absences' && <Absences />}
+        {user && !isFeatureDisabled && activeView === 'meals' && <Meals />}
+        {user && !isFeatureDisabled && activeView === 'incidents' && <Incidents />}
+        {user && !isFeatureDisabled && activeView === 'moments' && <Moments />}
+        {user && !isFeatureDisabled && activeView === 'events' && <Events />}
+        {user && !isFeatureDisabled && activeView === 'staff' && <StaffShifts />}
+        {user && !isFeatureDisabled && activeView === 'milestones' && <Milestones />}
+        {user && !isFeatureDisabled && activeView === 'documents' && <Documents />}
+        {user && !isFeatureDisabled && activeView === 'sleep' && <SleepTracker />}
+        {user && !isFeatureDisabled && activeView === 'hygiene' && <HygieneTracker />}
+        {user && !isFeatureDisabled && activeView === 'medications' && <MedicationHealth />}
+        {user && !isFeatureDisabled && activeView === 'timeline' && <DailyTimeline initialChildId={reportContext.childId} initialDate={reportContext.date} />}
+        {user && !isFeatureDisabled && activeView === 'children' && <Children />}
+        {user && activeView === 'features' && <FeatureManager onPermissionsChanged={reloadFeatures} />}
       </main>
       <footer className="footer"><span className="footer-mark" aria-hidden="true"><Icon name="leaf" size={15} /></span><p>{t.footer}</p></footer>
       </div>
@@ -286,7 +355,7 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
               setPassword(d.password)
             }}
           >
-            <Icon name={d.roleKey === 'roleParent' ? 'children' : d.roleKey === 'roleTeacher' ? 'leaf' : 'dashboard'} /><span><strong>{d.name || t[d.roleKey]}</strong><small>{d.email}</small></span><Icon name="arrow" size={16} />
+            <Icon name={d.roleKey === 'roleParent' ? 'children' : d.roleKey === 'roleTeacher' ? 'leaf' : d.roleKey === 'roleSuperAdmin' ? 'superadmin' : 'dashboard'} /><span><strong>{d.name || t[d.roleKey]}</strong><small>{d.email}</small></span><Icon name="arrow" size={16} />
           </button>
         ))}
       </div>

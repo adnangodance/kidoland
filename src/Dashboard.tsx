@@ -12,7 +12,7 @@ import { isSeaGodanci } from './child-highlight-util'
 
 import Icon, { type IconName } from './Icon'
 
-type Destination = 'attendance' | 'reports' | 'payments' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents' | 'sleep'
+type Destination = 'attendance' | 'reports' | 'payments' | 'children' | 'program' | 'announcements' | 'messages' | 'absences' | 'meals' | 'incidents' | 'moments' | 'events' | 'staff' | 'milestones' | 'documents' | 'sleep' | 'timeline'
 
 function PlaygroundArt() {
   return <svg className="playground-art" viewBox="0 0 320 210" fill="none" aria-hidden="true" focusable="false">
@@ -89,8 +89,10 @@ export default function Dashboard({ go }: { go: (view: Destination, context?: { 
         <div className="family-grid">{summary.childSummaries.map((child) => <article className={`roster-card family-card ${isSeaGodanci(child.name) ? 'sea-godanci-card' : ''}`} key={child.id}>
           <div className="card-avatar-heading"><ChildAvatar name={child.name} size={44} /><div><h2>{child.name} <SeaGodanciBadge name={child.name} /></h2><p className="card-subtitle">{child.groupName}</p></div><Icon name="leaf" size={22} /></div>
           {child.allergies && <p className="allergy-badge"><span aria-hidden="true">⚠️ </span><strong>{t.allergies}:</strong> {child.allergies}</p>}
-          <div className="family-statuses"><div><span>{t.attendanceTitle}</span><strong className={`attendance-status ${child.attendanceStatus || 'unmarked'}`}>{statusLabel(child.attendanceStatus)}</strong></div><div><span>{t.navReports}</span><strong className={child.hasReport ? 'record-ready' : 'record-waiting'}>{child.hasReport ? t.reportReady : t.reportEmpty}</strong></div><div><span>{t.permission}</span><strong>{child.photoConsent ? t.allowed : t.notAllowed}</strong></div></div>
-          <button className="btn ghost" onClick={() => go('reports', { childId: child.id, date })}>{t.dashRead}<Icon name="arrow" size={16} /></button>
+          <div className="card-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button className="btn ghost" style={{ flex: '1 1 120px' }} onClick={() => go('reports', { childId: child.id, date })}>{t.dashRead}<Icon name="arrow" size={16} /></button>
+            <button className="btn ghost" style={{ flex: '1 1 120px' }} onClick={() => go('timeline', { childId: child.id, date })}>{t.timelineViewBtn}<Icon name="clock" size={16} /></button>
+          </div>
         </article>)}</div>
       </> : <div className="dashboard-work-grid">
         <section className="work-section">

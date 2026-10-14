@@ -1497,3 +1497,115 @@ test('child potty and diaper hygiene tracker API', async () => {
     await f.dispose()
   }
 })
+
+test('super admin authentication and role feature permissions management API', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const admin = await f.login('admin')
+    const director = await f.login('director')
+    const parent = await f.login('parent')
+
+    // 1. Superadmin fetches all feature permissions
+    const listRes = await request('features', admin)
+    assert.equal(listRes.status, 200)
+    assert.equal(listRes.data.role, 'superadmin')
+    assert.ok(Array.isArray(listRes.data.features))
+    assert.equal(listRes.data.features.length, 20)
+    assert.equal(listRes.data.permissions.director.attendance, true)
+    assert.equal(listRes.data.permissions.parent.payments, true)
+
+    // 2. Parent fetches their enabled features (all enabled by default)
+    const parentFeatures = await request('features', parent)
+    assert.equal(parentFeatures.status, 200)
+    assert.equal(parentFeatures.data.role, 'parent')
+    assert.ok(parentFeatures.data.enabledFeatures.includes('sleep'))
+
+    // 3. Super admin disables a feature for parents
+    const updateRes = await request('admin/features', admin, {
+      role: 'parent',
+      featureKey: 'sleep',
+      isEnabled: false,
+    }, 'PUT')
+    assert.equal(updateRes.status, 200)
+    assert.equal(updateRes.data.permissions.parent.sleep, false)
+
+    // 4. Parent re-fetches features and sees sleep is disabled
+    const parentFeaturesAfter = await request('features', parent)
+    assert.equal(parentFeaturesAfter.status, 200)
+    assert.ok(!parentFeaturesAfter.data.enabledFeatures.includes('sleep'))
+
+    // 5. Non-superadmin cannot update feature permissions (403 forbidden)
+    const forbiddenRes = await request('admin/features', director, {
+      role: 'parent',
+      featureKey: 'sleep',
+      isEnabled: true,
+    }, 'PUT')
+    assert.equal(forbiddenRes.status, 403)
+
+    // 6. Non-superadmin cannot reset feature permissions (403 forbidden)
+    const forbiddenReset = await request('admin/features/reset', parent, {}, 'POST')
+    assert.equal(forbiddenReset.status, 403)
+
+    // 7. Super admin resets permissions to system defaults
+    const resetRes = await request('admin/features/reset', admin, {}, 'POST')
+    assert.equal(resetRes.status, 200)
+    assert.equal(resetRes.data.permissions.parent.sleep, true)
+
+    // 8. Parent sees sleep restored
+    const parentFeaturesRestored = await request('features', parent)
+    assert.ok(parentFeaturesRestored.data.enabledFeatures.includes('sleep'))
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('child daily timeline & live feed API: chronological events, summaries, and parent isolation', async () => {
+  const f = await fixture()
+  const { request } = f
+  try {
+    await f.start()
+    const director = await f.login('director')
+    const parent = await f.login('parent')
+    const d = new Date()
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+    // 1. Director fetches timeline for seeded child Arta
+    const dirRes = await request(`timeline?childId=c-arta&date=${today}`, director)
+    assert.equal(dirRes.status, 200)
+    assert.equal(dirRes.data.child.id, 'c-arta')
+    assert.equal(dirRes.data.date, today)
+    assert.ok(Array.isArray(dirRes.data.timeline))
+    assert.ok(dirRes.data.timeline.length >= 1)
+    assert.ok(dirRes.data.summary.totalEvents >= 1)
+
+    // Events are sorted in ascending time order
+    for (let i = 1; i < dirRes.data.timeline.length; i++) {
+      assert.ok(dirRes.data.timeline[i].time >= dirRes.data.timeline[i - 1].time)
+    }
+
+    // 2. Parent fetches timeline for their own linked child (Arta)
+    const parentRes = await request(`timeline?childId=c-arta&date=${today}`, parent)
+    assert.equal(parentRes.status, 200)
+    assert.equal(parentRes.data.child.id, 'c-arta')
+
+    // 3. Parent cannot fetch foreign child timeline (403 forbidden)
+    const secondParentRes = await request('parents', director, { name: 'Second Parent', email: 'second@timeline.test', password: 'password123' })
+    assert.equal(secondParentRes.status, 201)
+    const foreignChildRes = await request('children', director, { name: 'Foreign Child', groupName: 'Group B', parentUserId: secondParentRes.data.parent.id })
+    assert.equal(foreignChildRes.status, 201)
+    const forbiddenRes = await request(`timeline?childId=${foreignChildRes.data.child.id}&date=${today}`, parent)
+    assert.equal(forbiddenRes.status, 403)
+
+    const unknownRes = await request(`timeline?childId=c-unknown-99&date=${today}`, parent)
+    assert.equal(unknownRes.status, 404)
+
+    // 4. Invalid query parameters reject with 400
+    const invalidRes = await request('timeline?date=invalid-date', director)
+    assert.equal(invalidRes.status, 400)
+  } finally {
+    await f.dispose()
+  }
+})
+

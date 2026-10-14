@@ -1,6 +1,6 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:4000'
 
-export type Role = 'parent' | 'teacher' | 'director'
+export type Role = 'parent' | 'teacher' | 'director' | 'superadmin'
 
 export type User = {
   id: string
@@ -1295,5 +1295,91 @@ export async function updateHygieneLog(token: string, id: string, input: UpdateH
 export async function deleteHygieneLog(token: string, id: string) {
   return api<{ success: boolean }>(`/api/hygiene-logs/${id}`, {
     method: 'DELETE',
+  }, token)
+}
+
+export type TimelineCategory = 'arrival' | 'departure' | 'health' | 'hygiene' | 'sleep' | 'medication' | 'moment' | 'report' | 'incident'
+
+export type TimelineEvent = {
+  id: string
+  category: TimelineCategory
+  time: string
+  title: string
+  description: string
+  badge?: string
+  icon: string
+  imageUrl?: string | null
+  author?: string
+}
+
+export type TimelineSummary = {
+  totalEvents: number
+  checkInTime: string | null
+  checkOutTime: string | null
+  napMinutes: number
+  hygieneCount: number
+  hasHealthCheck: boolean
+  hasReport: boolean
+}
+
+export type TimelineResponse = {
+  child: {
+    id: string
+    name: string
+    groupName: string
+  }
+  date: string
+  summary: TimelineSummary
+  timeline: TimelineEvent[]
+}
+
+export async function getTimeline(token: string, childId: string, date: string, signal?: AbortSignal) {
+  const query = new URLSearchParams({ childId, date })
+  return api<TimelineResponse>(`/api/timeline?${query}`, { signal }, token)
+}
+
+export type FeatureRole = 'director' | 'teacher' | 'parent'
+
+export type FeaturePermissionMap = {
+  director: Record<string, boolean>
+  teacher: Record<string, boolean>
+  parent: Record<string, boolean>
+}
+
+export type FeatureInfo = {
+  key: string
+  category: 'daily' | 'community' | 'admin'
+}
+
+export async function getFeaturePermissions(token: string, signal?: AbortSignal) {
+  return api<{
+    permissions: FeaturePermissionMap
+    features: FeatureInfo[]
+    role?: string
+    enabledFeatures?: string[]
+  }>('/api/features', { signal }, token)
+}
+
+export async function updateFeaturePermission(
+  token: string,
+  role: FeatureRole,
+  featureKey: string,
+  isEnabled: boolean,
+) {
+  return api<{
+    success: boolean
+    permissions: FeaturePermissionMap
+  }>('/api/admin/features', {
+    method: 'PUT',
+    body: JSON.stringify({ role, featureKey, isEnabled }),
+  }, token)
+}
+
+export async function resetFeaturePermissions(token: string) {
+  return api<{
+    success: boolean
+    permissions: FeaturePermissionMap
+  }>('/api/admin/features/reset', {
+    method: 'POST',
   }, token)
 }

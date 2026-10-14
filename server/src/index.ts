@@ -3,7 +3,7 @@ import cors from 'cors'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
-import { db, localCalendarDate, type DbUser, type DbChildSleepLog, type DbChildMedication, type DbChildHygieneLog } from './db.js'
+import { db, localCalendarDate, ALL_FEATURES, getRoleFeaturePermissions, setRoleFeaturePermission, resetRoleFeaturePermissions, type DbUser, type DbChildSleepLog, type DbChildMedication, type DbChildHygieneLog } from './db.js'
 import { requireAuth, signToken, type AuthUser } from './auth.js'
 
 export const app = express()
@@ -3143,6 +3143,87 @@ app.delete('/api/hygiene-logs/:id', requireAuth, (req, res) => {
   res.json({ success: true })
 })
 
+// --- Phase 16: Super Admin & Role-Based Feature Permissions ---
+
+app.get('/api/features', requireAuth, (req, res) => {
+  const user = authed(req)
+  const permissions = getRoleFeaturePermissions()
+  const userRole = user.role as 'director' | 'teacher' | 'parent' | 'superadmin'
+
+  if (userRole === 'superadmin') {
+    return res.json({
+      role: 'superadmin',
+      permissions,
+      features: ALL_FEATURES,
+      enabledFeatures: ALL_FEATURES.map((f) => f.key),
+    })
+  }
+
+  const rolePerms = permissions[userRole] || {}
+  const enabledFeatures = ALL_FEATURES
+    .filter((f) => rolePerms[f.key] !== false)
+    .map((f) => f.key)
+
+  res.json({
+    role: userRole,
+    permissions,
+    features: ALL_FEATURES,
+    enabledFeatures,
+  })
+})
+
+app.put('/api/admin/features', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'superadmin') {
+    return res.status(403).json({ error: 'forbidden', message: 'Super admin access required' })
+  }
+
+  const singleSchema = z.object({
+    role: z.enum(['director', 'teacher', 'parent']),
+    featureKey: z.string().min(1),
+    isEnabled: z.boolean(),
+  })
+
+  const bulkSchema = z.object({
+    updates: z.array(singleSchema).min(1),
+  })
+
+  const singleParsed = singleSchema.safeParse(req.body)
+  if (singleParsed.success) {
+    setRoleFeaturePermission(singleParsed.data.role, singleParsed.data.featureKey, singleParsed.data.isEnabled)
+    return res.json({
+      success: true,
+      permissions: getRoleFeaturePermissions(),
+    })
+  }
+
+  const bulkParsed = bulkSchema.safeParse(req.body)
+  if (bulkParsed.success) {
+    for (const u of bulkParsed.data.updates) {
+      setRoleFeaturePermission(u.role, u.featureKey, u.isEnabled)
+    }
+    return res.json({
+      success: true,
+      permissions: getRoleFeaturePermissions(),
+    })
+  }
+
+  res.status(400).json({ error: 'invalid_body', details: singleParsed.error.issues })
+})
+
+app.post('/api/admin/features/reset', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'superadmin') {
+    return res.status(403).json({ error: 'forbidden', message: 'Super admin access required' })
+  }
+
+  resetRoleFeaturePermissions()
+  res.json({
+    success: true,
+    permissions: getRoleFeaturePermissions(),
+  })
+})
+
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const parsed = z.object({ date: calendarDate }).strict().safeParse(req.query)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })
@@ -3169,4 +3250,240 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
     ${user.role === 'parent' ? 'WHERE c.parent_user_id = ?' : ''} ORDER BY c.name, c.id`).all(parsed.data.date, parsed.data.date, ...params)
     .map((row) => { const child = row as { photoConsent: number; hasReport: number; allergies?: string }; return { ...child, photoConsent: Boolean(child.photoConsent), hasReport: Boolean(child.hasReport), allergies: child.allergies || '' } })
   res.json({ summary: { ...summary, unpaidBalances, date: parsed.data.date, unmarked: summary.children - summary.present - summary.absent, childSummaries: children } })
+})
+
+app.get('/api/timeline', requireAuth, (req, res) => {
+  const parsed = z.object({
+    childId: z.string().min(1),
+    date: calendarDate,
+  }).safeParse(req.query)
+
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_query' })
+  }
+
+  const user = authed(req)
+  const child = db.prepare('SELECT id, name, group_name AS groupName, parent_user_id AS parentUserId FROM children WHERE id = ?').get(parsed.data.childId) as { id: string; name: string; groupName: string; parentUserId: string } | undefined
+
+  if (!child) {
+    return res.status(404).json({ error: 'child_not_found' })
+  }
+
+  if (user.role === 'parent' && child.parentUserId !== user.id) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+
+  type TimelineEvent = {
+    id: string
+    category: 'arrival' | 'departure' | 'health' | 'hygiene' | 'sleep' | 'medication' | 'moment' | 'report' | 'incident'
+    time: string
+    title: string
+    description: string
+    badge?: string
+    icon: string
+    imageUrl?: string | null
+    author?: string
+  }
+
+  const events: TimelineEvent[] = []
+
+  // 1. Pickups & Check-ins
+  const pickups = db.prepare(`
+    SELECT id, log_time AS time, action, guardian_name AS guardianName, notes
+    FROM pickup_logs
+    WHERE child_id = ? AND log_date = ?
+    ORDER BY log_time ASC
+  `).all(child.id, parsed.data.date) as { id: string; time: string; action: 'check_in' | 'check_out'; guardianName: string; notes: string }[]
+
+  for (const p of pickups) {
+    events.push({
+      id: `pickup-${p.id}`,
+      category: p.action === 'check_in' ? 'arrival' : 'departure',
+      time: p.time,
+      title: p.action === 'check_in' ? 'Ardhja në çerdhe / Morning Check-in' : 'Largimi nga çerdhja / Afternoon Pick-up',
+      description: p.notes ? `${p.guardianName} · ${p.notes}` : p.guardianName,
+      badge: p.action === 'check_in' ? 'Check-in' : 'Check-out',
+      icon: p.action === 'check_in' ? 'check' : 'children',
+    })
+  }
+
+  // 2. Health check
+  const healthCheck = db.prepare(`
+    SELECT id, check_time AS time, temperature_celsius AS temperature, symptoms, passed_triage AS passedTriage, notes
+    FROM daily_health_checks
+    WHERE child_id = ? AND check_date = ?
+  `).get(child.id, parsed.data.date) as { id: string; time: string; temperature: number; symptoms: string; passedTriage: number; notes: string } | undefined
+
+  if (healthCheck) {
+    events.push({
+      id: `health-${healthCheck.id}`,
+      category: 'health',
+      time: healthCheck.time,
+      title: 'Triazhi & Kontrolli Shëndetësor / Morning Health Check',
+      description: [
+        healthCheck.symptoms && healthCheck.symptoms !== '[]' ? `Simptomat / Symptoms: ${healthCheck.symptoms}` : '',
+        healthCheck.notes,
+      ].filter(Boolean).join(' · ') || 'Kontroll i rregullt i mëngjesit / Normal morning check',
+      badge: `${healthCheck.temperature}°C · ${healthCheck.passedTriage ? 'PASSED' : 'FLAGGED'}`,
+      icon: 'leaf',
+    })
+  }
+
+  // 3. Hygiene & Diaper logs
+  const hygieneLogs = db.prepare(`
+    SELECT id, log_time AS time, entry_type AS entryType, diaper_type AS diaperType, potty_result AS pottyResult, cream_applied AS creamApplied, notes
+    FROM child_hygiene_logs
+    WHERE child_id = ? AND log_date = ?
+    ORDER BY log_time ASC
+  `).all(child.id, parsed.data.date) as { id: string; time: string; entryType: 'diaper' | 'potty'; diaperType: string | null; pottyResult: string | null; creamApplied: number; notes: string }[]
+
+  for (const h of hygieneLogs) {
+    events.push({
+      id: `hyg-${h.id}`,
+      category: 'hygiene',
+      time: h.time,
+      title: h.entryType === 'diaper' ? 'Ndërrim Pelene / Diaper Change' : 'Përdorim Tualeti / Potty Training',
+      description: [
+        h.creamApplied ? 'Aplikuar krem mbrojtës / Barrier cream applied' : '',
+        h.notes,
+      ].filter(Boolean).join(' · ') || (h.entryType === 'diaper' ? 'Ndërrim i rregullt' : 'Tualet'),
+      badge: (h.entryType === 'diaper' ? h.diaperType : h.pottyResult) || h.entryType,
+      icon: 'hygiene',
+    })
+  }
+
+  // 4. Sleep logs
+  const sleepLogs = db.prepare(`
+    SELECT id, start_time AS startTime, end_time AS endTime, duration_minutes AS durationMinutes, quality, notes
+    FROM child_sleep_logs
+    WHERE child_id = ? AND log_date = ?
+    ORDER BY start_time ASC
+  `).all(child.id, parsed.data.date) as { id: string; startTime: string; endTime: string | null; durationMinutes: number | null; quality: string; notes: string | null }[]
+
+  for (const s of sleepLogs) {
+    events.push({
+      id: `sleep-${s.id}`,
+      category: 'sleep',
+      time: s.startTime,
+      title: 'Pushimi & Gjumi i Ditës / Nap & Rest',
+      description: s.notes || (s.endTime ? `${s.startTime} - ${s.endTime} (${s.durationMinutes || 0} min)` : 'Gjumë i pushuar'),
+      badge: `${s.durationMinutes ? `${s.durationMinutes} min · ` : ''}${s.quality}`,
+      icon: 'sleep',
+    })
+  }
+
+  // 5. Medications
+  const medLogs = db.prepare(`
+    SELECT ml.id, SUBSTR(ml.administered_at, 12, 5) AS time, cm.medication_name AS medicationName, ml.dosage_given AS dosage, ml.reaction, ml.notes
+    FROM medication_logs ml
+    JOIN child_medications cm ON cm.id = ml.medication_id
+    WHERE ml.child_id = ? AND ml.administered_at LIKE ?
+    ORDER BY ml.administered_at ASC
+  `).all(child.id, `${parsed.data.date}%`) as { id: string; time: string; medicationName: string; dosage: string; reaction: string; notes: string }[]
+
+  for (const m of medLogs) {
+    events.push({
+      id: `med-${m.id}`,
+      category: 'medication',
+      time: m.time || '12:00',
+      title: `Administrim Bari: ${m.medicationName} / Medication: ${m.medicationName}`,
+      description: [
+        `Doza / Dose: ${m.dosage}`,
+        `Reagimi / Reaction: ${m.reaction}`,
+        m.notes,
+      ].filter(Boolean).join(' · '),
+      badge: m.dosage,
+      icon: 'medication',
+    })
+  }
+
+  // 6. Incidents
+  const incidents = db.prepare(`
+    SELECT id, incident_time AS time, type, location, first_aid AS firstAid, description, action_taken AS actionTaken
+    FROM incident_reports
+    WHERE child_id = ? AND incident_date = ?
+    ORDER BY incident_time ASC
+  `).all(child.id, parsed.data.date) as { id: string; time: string; type: string; location: string; firstAid: string; description: string; actionTaken: string }[]
+
+  for (const inc of incidents) {
+    events.push({
+      id: `inc-${inc.id}`,
+      category: 'incident',
+      time: inc.time,
+      title: `Raport Incidenti & Ndihmë e Parë / Incident: ${inc.type}`,
+      description: `${inc.description} · Veprimi / Action: ${inc.actionTaken}`,
+      badge: `${inc.location} · ${inc.firstAid}`,
+      icon: 'incidents',
+    })
+  }
+
+  // 7. Classroom moments
+  const moments = db.prepare(`
+    SELECT id, title, learning_area AS learningArea, description, image_url AS imageUrl
+    FROM classroom_moments
+    WHERE moment_date = ? AND (group_name = ? OR tagged_children LIKE ?)
+    ORDER BY created_at ASC
+  `).all(parsed.data.date, child.groupName, `%"${child.id}"%`) as { id: string; title: string; learningArea: string; description: string; imageUrl: string | null }[]
+
+  for (const mom of moments) {
+    events.push({
+      id: `mom-${mom.id}`,
+      category: 'moment',
+      time: '11:15',
+      title: mom.title,
+      description: mom.description,
+      badge: mom.learningArea.toUpperCase(),
+      imageUrl: mom.imageUrl,
+      icon: 'moments',
+    })
+  }
+
+  // 8. Daily teacher report & photo
+  const report = db.prepare(`
+    SELECT r.id, r.mood, r.meals, r.nap, r.activities, r.note, rp.image_url AS imageUrl, u.name AS teacherName
+    FROM reports r
+    LEFT JOIN report_photos rp ON rp.report_id = r.id
+    LEFT JOIN users u ON u.id = r.teacher_user_id
+    WHERE r.child_id = ? AND r.report_date = ?
+  `).get(child.id, parsed.data.date) as { id: string; mood: string; meals: string; nap: string; activities: string; note: string; imageUrl: string | null; teacherName: string | null } | undefined
+
+  if (report) {
+    events.push({
+      id: `rep-${report.id}`,
+      category: 'report',
+      time: '14:30',
+      title: 'Tregimi Ditor i Edukatores / Teacher Daily Care Story',
+      description: report.note || `Aktivitetet / Activities: ${report.activities}`,
+      badge: report.mood,
+      imageUrl: report.imageUrl,
+      author: report.teacherName || 'Edukatorja / Teacher',
+      icon: 'reports',
+    })
+  }
+
+  // Sort events chronologically
+  events.sort((a, b) => a.time.localeCompare(b.time))
+
+  const checkIn = pickups.find((p) => p.action === 'check_in')
+  const checkOut = pickups.find((p) => p.action === 'check_out')
+  const totalNap = sleepLogs.reduce((acc, s) => acc + (s.durationMinutes || 0), 0)
+
+  res.json({
+    child: {
+      id: child.id,
+      name: child.name,
+      groupName: child.groupName,
+    },
+    date: parsed.data.date,
+    summary: {
+      totalEvents: events.length,
+      checkInTime: checkIn?.time || null,
+      checkOutTime: checkOut?.time || null,
+      napMinutes: totalNap,
+      hygieneCount: hygieneLogs.length,
+      hasHealthCheck: Boolean(healthCheck),
+      hasReport: Boolean(report),
+    },
+    timeline: events,
+  })
 })

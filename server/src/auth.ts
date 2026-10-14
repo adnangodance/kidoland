@@ -25,7 +25,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
       return res.status(401).json({ error: 'unauthorized' })
     }
     const current = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(payload.sub) as AuthUser | undefined
-    if (!current || !['parent', 'teacher', 'director'].includes(current.role)) {
+    if (!current || !['parent', 'teacher', 'director', 'superadmin'].includes(current.role)) {
       return res.status(401).json({ error: 'unauthorized' })
     }
     ;(req as Request & { user: AuthUser }).user = current

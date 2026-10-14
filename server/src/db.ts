@@ -19,7 +19,7 @@ db.exec(`
     name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('parent','teacher','director'))
+    role TEXT NOT NULL CHECK(role IN ('parent','teacher','director','superadmin'))
   );
 
   CREATE TABLE IF NOT EXISTS children (
@@ -70,6 +70,36 @@ db.exec(`
 `)
 
 // Additive migration: older pilot rows retain their IDs, balances and paid state.
+const userTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get() as { sql: string } | undefined
+if (userTableSql && !userTableSql.sql.includes('superadmin')) {
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    CREATE TABLE users_migrated (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('parent','teacher','director','superadmin'))
+    );
+    INSERT INTO users_migrated (id, name, email, password_hash, role)
+      SELECT id, name, email, password_hash, role FROM users;
+    DROP TABLE users;
+    ALTER TABLE users_migrated RENAME TO users;
+    PRAGMA foreign_keys = ON;
+  `)
+}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS role_feature_permissions (
+    id TEXT PRIMARY KEY,
+    role TEXT NOT NULL CHECK(role IN ('parent','teacher','director')),
+    feature_key TEXT NOT NULL,
+    is_enabled INTEGER NOT NULL DEFAULT 1 CHECK(is_enabled IN (0,1)),
+    updated_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS role_feature_unique ON role_feature_permissions(role, feature_key);
+`)
+
 const childColumns = db.prepare('PRAGMA table_info(children)').all() as { name: string }[]
 if (!childColumns.some((column) => column.name === 'photo_consent')) {
   db.exec('ALTER TABLE children ADD COLUMN photo_consent INTEGER NOT NULL DEFAULT 0 CHECK(photo_consent IN (0,1))')
@@ -665,12 +695,19 @@ export type DbUser = {
   name: string
   email: string
   password_hash: string
-  role: 'parent' | 'teacher' | 'director'
+  role: 'parent' | 'teacher' | 'director' | 'superadmin'
 }
 
 type Seed = { id: string; name: string; email: string; password: string; role: string }
 
 const seeds: Seed[] = [
+  {
+    id: 'u-superadmin',
+    name: 'Super Admin',
+    email: 'admin@kidoland.demo',
+    password: 'admin123',
+    role: 'superadmin',
+  },
   {
     id: 'u-parent',
     name: 'Elira Krasniqi',
@@ -702,6 +739,89 @@ if (count.c === 0) {
   for (const s of seeds) {
     insert.run(s.id, s.name, s.email, bcrypt.hashSync(s.password, 10), s.role)
   }
+}
+
+if (!process.env.KIDOLAND_DB_PATH && !db.prepare("SELECT id FROM users WHERE role = 'superadmin'").get()) {
+  db.prepare(`
+    INSERT OR IGNORE INTO users (id, name, email, password_hash, role)
+    VALUES ('u-superadmin', 'Super Admin', 'admin@kidoland.demo', ?, 'superadmin')
+  `).run(bcrypt.hashSync('admin123', 10))
+}
+
+export const ALL_FEATURES = [
+  { key: 'dashboard', category: 'admin' },
+  { key: 'attendance', category: 'daily' },
+  { key: 'reports', category: 'daily' },
+  { key: 'program', category: 'daily' },
+  { key: 'meals', category: 'daily' },
+  { key: 'sleep', category: 'daily' },
+  { key: 'hygiene', category: 'daily' },
+  { key: 'timeline', category: 'daily' },
+  { key: 'messages', category: 'community' },
+  { key: 'announcements', category: 'community' },
+  { key: 'moments', category: 'community' },
+  { key: 'events', category: 'community' },
+  { key: 'children', category: 'admin' },
+  { key: 'payments', category: 'admin' },
+  { key: 'documents', category: 'admin' },
+  { key: 'medications', category: 'admin' },
+  { key: 'absences', category: 'admin' },
+  { key: 'incidents', category: 'admin' },
+  { key: 'milestones', category: 'admin' },
+  { key: 'staff', category: 'admin' },
+] as const
+
+export type FeatureKey = (typeof ALL_FEATURES)[number]['key']
+
+const insertPerm = db.prepare(`
+  INSERT OR IGNORE INTO role_feature_permissions (id, role, feature_key, is_enabled, updated_at)
+  VALUES (?, ?, ?, 1, ?)
+`)
+const nowIso = new Date().toISOString()
+for (const role of ['director', 'teacher', 'parent'] as const) {
+  for (const f of ALL_FEATURES) {
+    insertPerm.run(`${role}-${f.key}`, role, f.key, nowIso)
+  }
+}
+
+export function getRoleFeaturePermissions(): Record<'director' | 'teacher' | 'parent', Record<string, boolean>> {
+  const rows = db.prepare('SELECT role, feature_key, is_enabled FROM role_feature_permissions').all() as {
+    role: 'director' | 'teacher' | 'parent'
+    feature_key: string
+    is_enabled: number
+  }[]
+  const result: Record<'director' | 'teacher' | 'parent', Record<string, boolean>> = {
+    director: {},
+    teacher: {},
+    parent: {},
+  }
+  for (const r of rows) {
+    if (result[r.role]) {
+      result[r.role][r.feature_key] = Boolean(r.is_enabled)
+    }
+  }
+  for (const role of ['director', 'teacher', 'parent'] as const) {
+    for (const f of ALL_FEATURES) {
+      if (result[role][f.key] === undefined) {
+        result[role][f.key] = true
+      }
+    }
+  }
+  return result
+}
+
+export function setRoleFeaturePermission(role: 'director' | 'teacher' | 'parent', featureKey: string, isEnabled: boolean) {
+  const now = new Date().toISOString()
+  db.prepare(`
+    INSERT INTO role_feature_permissions (id, role, feature_key, is_enabled, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(role, feature_key) DO UPDATE SET is_enabled = ?, updated_at = ?
+  `).run(`${role}-${featureKey}`, role, featureKey, isEnabled ? 1 : 0, now, isEnabled ? 1 : 0, now)
+}
+
+export function resetRoleFeaturePermissions() {
+  const now = new Date().toISOString()
+  db.prepare('UPDATE role_feature_permissions SET is_enabled = 1, updated_at = ?').run(now)
 }
 
 const childCount = db.prepare('SELECT COUNT(*) AS c FROM children').get() as { c: number }
