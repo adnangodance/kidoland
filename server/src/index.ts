@@ -1363,8 +1363,18 @@ const mealSelect = `
   END
 `
 
+const monthlyMealSelect = `
+  SELECT id, menu_month AS menuMonth, week_number AS weekNumber,
+         day_of_week AS dayOfWeek, breakfast, morning_snack AS morningSnack,
+         lunch, afternoon_snack AS afternoonSnack, allergens, notes,
+         updated_by AS updatedBy, updated_at AS updatedAt
+  FROM monthly_meals
+`
+
 const mealBody = z.object({
   dayOfWeek: z.enum(['monday', 'tuesday', 'wednesday', 'thursday', 'friday']),
+  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  weekNumber: z.number().int().min(0).max(5).optional().default(0),
   breakfast: z.string().trim().min(1).max(500),
   morningSnack: z.string().trim().min(1).max(500),
   lunch: z.string().trim().min(1).max(500),
@@ -1373,7 +1383,33 @@ const mealBody = z.object({
   notes: z.string().max(1000).optional().default(''),
 }).strict()
 
-app.get('/api/meals', requireAuth, (_req, res) => {
+app.get('/api/meals', requireAuth, (req, res) => {
+  const month = typeof req.query.month === 'string' && /^\d{4}-\d{2}$/.test(req.query.month)
+    ? req.query.month
+    : null
+  const weekNumber = typeof req.query.week === 'string' && /^[0-5]$/.test(req.query.week)
+    ? Number(req.query.week)
+    : 0
+
+  if (month) {
+    let meals = db.prepare(`${monthlyMealSelect} WHERE menu_month = ? AND week_number = ? ORDER BY CASE day_of_week WHEN 'monday' THEN 1 WHEN 'tuesday' THEN 2 WHEN 'wednesday' THEN 3 WHEN 'thursday' THEN 4 WHEN 'friday' THEN 5 ELSE 6 END`).all(month, weekNumber) as any[]
+
+    if (meals.length === 0 && weekNumber !== 0) {
+      meals = db.prepare(`${monthlyMealSelect} WHERE menu_month = ? AND week_number = 0 ORDER BY CASE day_of_week WHEN 'monday' THEN 1 WHEN 'tuesday' THEN 2 WHEN 'wednesday' THEN 3 WHEN 'thursday' THEN 4 WHEN 'friday' THEN 5 ELSE 6 END`).all(month) as any[]
+    }
+
+    if (meals.length === 0) {
+      const template = db.prepare(mealSelect).all() as any[]
+      meals = template.map((m) => ({
+        ...m,
+        menuMonth: month,
+        weekNumber,
+      }))
+    }
+
+    return res.json({ meals, month, weekNumber })
+  }
+
   const meals = db.prepare(mealSelect).all()
   res.json({ meals })
 })
@@ -1385,11 +1421,32 @@ app.post('/api/meals', requireAuth, (req, res) => {
   }
   const parsed = mealBody.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
-  const { dayOfWeek, breakfast, morningSnack, lunch, afternoonSnack, allergens, notes } = parsed.data
+  const { dayOfWeek, month, weekNumber, breakfast, morningSnack, lunch, afternoonSnack, allergens, notes } = parsed.data
 
   const now = new Date().toISOString()
-  const existing = db.prepare('SELECT id FROM weekly_meals WHERE day_of_week = ?').get(dayOfWeek) as { id: string } | undefined
-  const id = existing?.id || randomUUID()
+  const targetMonth = month || now.slice(0, 7)
+
+  // Save to monthly_meals
+  const existingMonthly = db.prepare('SELECT id FROM monthly_meals WHERE menu_month = ? AND week_number = ? AND day_of_week = ?').get(targetMonth, weekNumber, dayOfWeek) as { id: string } | undefined
+  const monthlyId = existingMonthly?.id || randomUUID()
+
+  db.prepare(`
+    INSERT INTO monthly_meals (id, menu_month, week_number, day_of_week, breakfast, morning_snack, lunch, afternoon_snack, allergens, notes, updated_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(menu_month, week_number, day_of_week) DO UPDATE SET
+      breakfast=excluded.breakfast,
+      morning_snack=excluded.morning_snack,
+      lunch=excluded.lunch,
+      afternoon_snack=excluded.afternoon_snack,
+      allergens=excluded.allergens,
+      notes=excluded.notes,
+      updated_by=excluded.updated_by,
+      updated_at=excluded.updated_at
+  `).run(monthlyId, targetMonth, weekNumber, dayOfWeek, breakfast, morningSnack, lunch, afternoonSnack, allergens, notes, user.id, now)
+
+  // Maintain weekly_meals for default/fallback views
+  const existingWeekly = db.prepare('SELECT id FROM weekly_meals WHERE day_of_week = ?').get(dayOfWeek) as { id: string } | undefined
+  const weeklyId = existingWeekly?.id || randomUUID()
 
   db.prepare(`
     INSERT INTO weekly_meals (id, day_of_week, breakfast, morning_snack, lunch, afternoon_snack, allergens, notes, updated_by, updated_at)
@@ -1403,10 +1460,70 @@ app.post('/api/meals', requireAuth, (req, res) => {
       notes=excluded.notes,
       updated_by=excluded.updated_by,
       updated_at=excluded.updated_at
-  `).run(id, dayOfWeek, breakfast, morningSnack, lunch, afternoonSnack, allergens, notes, user.id, now)
+  `).run(weeklyId, dayOfWeek, breakfast, morningSnack, lunch, afternoonSnack, allergens, notes, user.id, now)
 
-  const meal = db.prepare(`${mealSelect.split('ORDER BY')[0]} WHERE id = ?`).get(id)
-  res.status(200).json({ meal })
+  const meal = db.prepare(`${monthlyMealSelect} WHERE id = ?`).get(monthlyId)
+  res.status(200).json({ meal: meal || db.prepare(`${mealSelect.split('ORDER BY')[0]} WHERE id = ?`).get(weeklyId) })
+})
+
+app.post('/api/meals/copy-month', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'teacher' && user.role !== 'director' && user.role !== 'superadmin') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+  const copySchema = z.object({
+    fromMonth: z.string().regex(/^\d{4}-\d{2}$/),
+    toMonth: z.string().regex(/^\d{4}-\d{2}$/),
+  }).strict()
+  const parsed = copySchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+  const { fromMonth, toMonth } = parsed.data
+
+  let sourceMeals = db.prepare(`SELECT * FROM monthly_meals WHERE menu_month = ?`).all(fromMonth) as any[]
+  if (sourceMeals.length === 0) {
+    const defaults = db.prepare(`SELECT * FROM weekly_meals`).all() as any[]
+    sourceMeals = defaults.map((d) => ({
+      ...d,
+      menu_month: fromMonth,
+      week_number: 0,
+    }))
+  }
+
+  const now = new Date().toISOString()
+  const insert = db.prepare(`
+    INSERT INTO monthly_meals (id, menu_month, week_number, day_of_week, breakfast, morning_snack, lunch, afternoon_snack, allergens, notes, updated_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(menu_month, week_number, day_of_week) DO UPDATE SET
+      breakfast=excluded.breakfast,
+      morning_snack=excluded.morning_snack,
+      lunch=excluded.lunch,
+      afternoon_snack=excluded.afternoon_snack,
+      allergens=excluded.allergens,
+      notes=excluded.notes,
+      updated_by=excluded.updated_by,
+      updated_at=excluded.updated_at
+  `)
+
+  db.transaction(() => {
+    for (const m of sourceMeals) {
+      insert.run(
+        randomUUID(),
+        toMonth,
+        m.week_number || 0,
+        m.day_of_week,
+        m.breakfast,
+        m.morning_snack,
+        m.lunch,
+        m.afternoon_snack,
+        m.allergens || '',
+        m.notes || '',
+        user.id,
+        now,
+      )
+    }
+  })()
+
+  res.json({ success: true, count: sourceMeals.length })
 })
 
 const medicalProfileSchema = z.object({

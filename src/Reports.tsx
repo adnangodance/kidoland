@@ -82,13 +82,14 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
   useEffect(() => {
     if (!token) return
     const ac = new AbortController()
-    listWeeklyMeals(token, ac.signal)
+    const month = date ? date.slice(0, 7) : undefined
+    listWeeklyMeals(token, month, undefined, ac.signal)
       .then((res) => {
         if (alive.current) setWeeklyMeals(res.meals)
       })
       .catch(() => {})
     return () => ac.abort()
-  }, [token])
+  }, [token, date])
 
   const activeDayOfWeek = useMemo(() => getDayOfWeek(date), [date])
   const todaysMenu = useMemo(() => {

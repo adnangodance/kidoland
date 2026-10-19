@@ -672,7 +672,7 @@ kbd { font-family: inherit; font-size: 10px; color: #74786c; }
 .family-statuses { gap: 17px; }
 .family-statuses strong { display: inline-flex; align-items: center; font-weight: 500; }
 /* The report editor uses document sections rather than nested cards. */
-.report-form.login-form { padding: 28px 32px 0; max-width: 900px; margin: 24px auto; border: 1px solid var(--kd-line); border-radius: 8px; }
+.report-form.login-form { padding: 28px 32px 0; max-width: 100%; width: 100%; margin: 24px 0; border: 1px solid var(--kd-line); border-radius: 8px; box-sizing: border-box; }
 .report-form > h2 { font-size: 19px; }
 .report-form > fieldset { gap: 0; }
 .editor-section { padding: 24px 0; border: 0; border-top: 1px solid var(--kd-line); border-radius: 0; background: transparent; min-width: 0; }
@@ -687,7 +687,7 @@ kbd { font-family: inherit; font-size: 10px; color: #74786c; }
 .report-grid > div:last-child { border-right: 0; }
 .report-grid h3 { font-weight: 500; color: #888c80; margin-bottom: 8px; }
 .report-grid p { font-weight: 550; }
-.reports-panel > .roster-card { max-width: 900px; margin-left: auto; margin-right: auto; }
+.reports-panel > .roster-card { max-width: 100%; width: 100%; margin-left: 0; margin-right: 0; box-sizing: border-box; }
 
 /* Child Carousel / Quick Switcher in Reports */
 .child-carousel-wrap {
@@ -697,9 +697,8 @@ kbd { font-family: inherit; font-size: 10px; color: #74786c; }
   border: 1px solid var(--kd-line);
   border-radius: 8px;
   box-sizing: border-box;
-  max-width: 900px;
-  margin-left: auto;
-  margin-right: auto;
+  max-width: 100%;
+  width: 100%;
 }
 .child-carousel-bar {
   display: flex;
@@ -947,64 +946,226 @@ kbd { font-family: inherit; font-size: 10px; color: #74786c; }
   text-overflow: ellipsis;
 }
 
-/* Course Tabs (Brightwheel pattern) */
-.meal-course-tabs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  background: #f1f5f9;
-  border-radius: 10px;
-  margin-bottom: 14px;
-  box-sizing: border-box;
-  max-width: 100%;
+/* Meal Choice and Live Menu Comment Box */
+.meal-care-card .care-choice-grid {
+  margin-bottom: 4px;
 }
 
-.meal-course-tab {
+.meal-menu-comment-box {
+  margin-top: 14px;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  max-width: 100%;
+  animation: fadeInCare 0.2s ease-out;
+}
+
+@keyframes fadeInCare {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.meal-comment-badge-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 6px 4px;
-  border-radius: 8px;
-  border: 0;
-  background: transparent;
-  color: #475569;
-  font-size: 11px;
-  font-weight: 550;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  min-height: 38px;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
   box-sizing: border-box;
   max-width: 100%;
+}
+
+.meal-comment-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #334155;
   min-width: 0;
-  overflow: hidden;
 }
 
-.meal-course-tab:hover {
-  color: #0f172a;
-  background: rgba(255, 255, 255, 0.6);
-}
-
-.meal-course-tab.is-active {
-  background: #ffffff;
-  color: #0f172a;
-  font-weight: 700;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-.course-tab-icon {
+.meal-comment-icon {
   font-size: 14px;
   line-height: 1;
-  flex-shrink: 0;
 }
 
-.course-tab-name {
+.meal-comment-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-insert-note {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-insert-note:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.btn-insert-note.is-inserted {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #86efac;
+}
+
+.meal-comment-main-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.meal-comment-rating-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #e0f2fe;
+  color: #0369a1;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.meal-comment-headline {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 550;
+  color: #0f172a;
+  line-height: 1.4;
+  flex: 1;
   min-width: 0;
+}
+
+.meal-comment-menu-details {
+  border-top: 1px dashed #cbd5e1;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.meal-comment-menu-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #64748b;
+}
+
+.meal-comment-dishes-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.meal-dish-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #334155;
+  box-sizing: border-box;
+  max-width: 100%;
+  word-break: break-word;
+}
+
+.meal-no-menu-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #64748b;
+  font-style: italic;
+}
+
+.custom-meal-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.custom-meal-pill {
+  font-size: 12px;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  padding: 4px 10px;
+  border-radius: 6px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Saved Story Card Menu Details */
+.story-meal-menu-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #475569;
+  background: rgba(248, 250, 252, 0.9);
+  border-left: 2px solid #3b82f6;
+  padding: 4px 8px;
+  border-radius: 0 4px 4px 0;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.story-menu-prefix {
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #64748b;
+  letter-spacing: 0.4px;
+}
+
+.story-menu-text {
+  font-size: 11px;
+  color: #334155;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
 
 /* Today's Course Menu Card */
 .course-menu-card {
@@ -1752,9 +1913,8 @@ kbd { font-family: inherit; font-size: 10px; color: #74786c; }
   .attendance-identity { flex-wrap: wrap; }
   .attendance-summary button { font-size: 10px; padding: 10px 7px; }
   .care-choice-grid { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-  .meal-course-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 2px; }
-  .meal-course-tab { padding: 6px 2px; font-size: 10px; }
-  .portion-scale-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+  .meal-comment-badge-row { flex-direction: column; align-items: flex-start; }
+  .btn-insert-note { width: 100%; text-align: center; }
   .daily-care-card { padding: 12px 10px; }
 }
 

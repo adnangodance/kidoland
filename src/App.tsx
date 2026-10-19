@@ -134,7 +134,6 @@ function Shell() {
       label: t.navSystemAdmin,
       items: [
         { view: 'features' as View, label: t.navFeatures, icon: 'superadmin' as IconName },
-        { view: 'staff' as View, label: t.navAccounts, icon: 'staff' as IconName },
       ],
     }] : []),
   ]

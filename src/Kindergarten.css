@@ -183,7 +183,7 @@
 .workspace-frame .modal-content { border-radius: 24px; }
 
 /* The saved daily report reads as a child's day, with authored notes and photos. */
-.workspace-frame .report-form.login-form { max-width: 900px; border-radius: 24px; padding: 25px 28px 0; }
+.workspace-frame .report-form.login-form { max-width: 100%; width: 100%; border-radius: 24px; padding: 25px 28px 0; }
 .workspace-frame .report-form > h2 { font-size: 22px; }
 .workspace-frame .editor-section { border-color: #efe4da; }
 .workspace-frame .editor-section h3, .workspace-frame .editor-section legend { font-size: 14px; font-weight: 650; }
@@ -191,7 +191,7 @@
 .workspace-frame .report-activities .choice { border-radius: 12px; background: #f9f5ee; border-color: #e9e1d5; min-height: 48px; }
 .workspace-frame .report-activities .choice:has(input:checked) { background: #e8f2e5; border-color: #c5d9be; color: #47653e; }
 .workspace-frame .editor-actions { background: #fff6ec; border-radius: 0 0 23px 23px; border-color: var(--kd-line); margin: 0 -28px; padding: 20px 28px; }
-.workspace-frame .reports-panel > .report-story-card { max-width: 900px; padding: 27px; border-radius: 25px; margin-top: 25px; }
+.workspace-frame .reports-panel > .report-story-card { max-width: 100%; width: 100%; padding: 27px; border-radius: 25px; margin-top: 25px; }
 .report-day-mark { margin-left: auto; width: 44px; height: 44px; flex-shrink: 0; display: grid; place-items: center; border-radius: 15px; background: #fff0ce; color: #a57932; }
 .report-story { display: grid; gap: 17px; position: relative; margin-top: 25px; }
 .report-story::before { content: ''; position: absolute; left: 17px; top: 16px; bottom: 22px; border-left: 2px dashed #e7dfd5; }

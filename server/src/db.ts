@@ -231,6 +231,22 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
     updated_at TEXT NOT NULL,
     UNIQUE(day_of_week)
   );
+  CREATE TABLE IF NOT EXISTS monthly_meals (
+    id TEXT PRIMARY KEY,
+    menu_month TEXT NOT NULL,
+    day_of_week TEXT NOT NULL CHECK(day_of_week IN ('monday', 'tuesday', 'wednesday', 'thursday', 'friday')),
+    week_number INTEGER NOT NULL DEFAULT 0 CHECK(week_number BETWEEN 0 AND 5),
+    breakfast TEXT NOT NULL DEFAULT '',
+    morning_snack TEXT NOT NULL DEFAULT '',
+    lunch TEXT NOT NULL DEFAULT '',
+    afternoon_snack TEXT NOT NULL DEFAULT '',
+    allergens TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    updated_by TEXT NOT NULL REFERENCES users(id),
+    updated_at TEXT NOT NULL,
+    UNIQUE(menu_month, week_number, day_of_week)
+  );
+  CREATE INDEX IF NOT EXISTS monthly_meals_month_idx ON monthly_meals(menu_month, week_number);
   CREATE TABLE IF NOT EXISTS child_medical_profiles (
     child_id TEXT PRIMARY KEY REFERENCES children(id) ON DELETE CASCADE,
     pediatrician_name TEXT NOT NULL DEFAULT '',

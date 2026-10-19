@@ -503,6 +503,8 @@ export type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'frida
 export type WeeklyMeal = {
   id: string
   dayOfWeek: DayOfWeek
+  menuMonth?: string
+  weekNumber?: number
   breakfast: string
   morningSnack: string
   lunch: string
@@ -515,6 +517,8 @@ export type WeeklyMeal = {
 
 export type MealInput = {
   dayOfWeek: DayOfWeek
+  month?: string
+  weekNumber?: number
   breakfast: string
   morningSnack: string
   lunch: string
@@ -523,14 +527,25 @@ export type MealInput = {
   notes?: string
 }
 
-export async function listWeeklyMeals(token: string, signal?: AbortSignal) {
-  return api<{ meals: WeeklyMeal[] }>('/api/meals', { signal }, token)
+export async function listWeeklyMeals(token: string, month?: string, week?: number, signal?: AbortSignal) {
+  const query = new URLSearchParams()
+  if (month) query.set('month', month)
+  if (typeof week === 'number') query.set('week', String(week))
+  const qs = query.toString() ? `?${query.toString()}` : ''
+  return api<{ meals: WeeklyMeal[]; month?: string; weekNumber?: number }>(`/api/meals${qs}`, { signal }, token)
 }
 
 export async function updateWeeklyMeal(token: string, input: MealInput) {
   return api<{ meal: WeeklyMeal }>('/api/meals', {
     method: 'POST',
     body: JSON.stringify(input),
+  }, token)
+}
+
+export async function copyMonthlyMeals(token: string, fromMonth: string, toMonth: string) {
+  return api<{ success: boolean; count: number }>('/api/meals/copy-month', {
+    method: 'POST',
+    body: JSON.stringify({ fromMonth, toMonth }),
   }, token)
 }
 

@@ -1,9 +1,10 @@
-/* Display and manage kindergarten weekly food menu and allergen alerts */
+/* Display and manage kindergarten monthly food menu and allergen alerts */
 /* eslint-disable react/set-state-in-effect, react-hooks/exhaustive-deps */
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   listWeeklyMeals,
   updateWeeklyMeal,
+  copyMonthlyMeals,
   listChildren,
   type WeeklyMeal,
   type MealInput,
@@ -22,10 +23,38 @@ const DAYS: { key: DayOfWeek; labelKey: 'monday' | 'tuesday' | 'wednesday' | 'th
   { key: 'friday', labelKey: 'friday' },
 ]
 
+function formatMonthName(monthStr: string, lang: 'en' | 'sq'): string {
+  const [y, m] = monthStr.split('-')
+  const monthIdx = Number(m) - 1
+  const sqMonths = ['Janar', 'Shkurt', 'Mars', 'Prill', 'Maj', 'Qershor', 'Korrik', 'Gusht', 'Shtator', 'Tetor', 'Nëntor', 'Dhjetor']
+  const enMonths = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  const name = lang === 'sq' ? sqMonths[monthIdx] || m : enMonths[monthIdx] || m
+  return `${name} ${y}`
+}
+
+function shiftMonth(monthStr: string, delta: number): string {
+  const [y, m] = monthStr.split('-').map(Number)
+  const date = new Date(y, m - 1 + delta, 1)
+  const newY = date.getFullYear()
+  const newM = String(date.getMonth() + 1).padStart(2, '0')
+  return `${newY}-${newM}`
+}
+
+function getCurrentMonth(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  return `${y}-${m}`
+}
+
 export default function Meals() {
   const { token, user } = useAuth()
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const alive = useAlive()
+
+  const [currentMonthStr] = useState(getCurrentMonth)
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => getCurrentMonth())
+  const [selectedWeek, setSelectedWeek] = useState<number>(0)
 
   const [meals, setMeals] = useState<WeeklyMeal[]>([])
   const [children, setChildren] = useState<Child[]>([])
@@ -37,6 +66,8 @@ export default function Meals() {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<MealInput>({
     dayOfWeek: 'monday',
+    month: currentMonthStr,
+    weekNumber: 0,
     breakfast: '',
     morningSnack: '',
     lunch: '',
@@ -56,7 +87,7 @@ export default function Meals() {
     setError(false)
 
     Promise.all([
-      listWeeklyMeals(token || ''),
+      listWeeklyMeals(token || '', selectedMonth, selectedWeek),
       user?.role === 'parent' ? listChildren(token || '') : Promise.resolve({ children: [] }),
     ])
       .then(([mRes, cRes]) => {
@@ -67,6 +98,8 @@ export default function Meals() {
           if (currentMeal) {
             setDraft({
               dayOfWeek: currentMeal.dayOfWeek,
+              month: selectedMonth,
+              weekNumber: selectedWeek,
               breakfast: currentMeal.breakfast,
               morningSnack: currentMeal.morningSnack,
               lunch: currentMeal.lunch,
@@ -87,7 +120,7 @@ export default function Meals() {
     return () => {
       cancelled = true
     }
-  }, [token, retry])
+  }, [token, selectedMonth, selectedWeek, retry])
 
   function selectDay(day: DayOfWeek) {
     setActiveDay(day)
@@ -98,6 +131,8 @@ export default function Meals() {
     if (currentMeal) {
       setDraft({
         dayOfWeek: currentMeal.dayOfWeek,
+        month: selectedMonth,
+        weekNumber: selectedWeek,
         breakfast: currentMeal.breakfast,
         morningSnack: currentMeal.morningSnack,
         lunch: currentMeal.lunch,
@@ -108,6 +143,8 @@ export default function Meals() {
     } else {
       setDraft({
         dayOfWeek: day,
+        month: selectedMonth,
+        weekNumber: selectedWeek,
         breakfast: '',
         morningSnack: '',
         lunch: '',
@@ -122,6 +159,8 @@ export default function Meals() {
     if (type === 'mediterranean') {
       setDraft((d) => ({
         ...d,
+        month: selectedMonth,
+        weekNumber: selectedWeek,
         breakfast: 'Qull tërshëre me mollë dhe mjaltë / Oatmeal with organic apples & honey',
         morningSnack: 'Dardha dhe mandarina të freskëta / Seasonal pears & mandarins',
         lunch: 'Supë peshku/pule, fileto e pjekur me oriz dhe sallatë / Baked fillet with herb rice & green salad',
@@ -132,6 +171,8 @@ export default function Meals() {
     } else {
       setDraft((d) => ({
         ...d,
+        month: selectedMonth,
+        weekNumber: selectedWeek,
         breakfast: 'Vezë të ziera fshati, djathë dhe bukë e thekur / Farm-fresh boiled eggs, cheese & toast',
         morningSnack: 'Feta molle dhe karota të prera / Fresh crisp apple & carrot sticks',
         lunch: 'Gjellë tradicionale me thjerrëza fshati dhe perime / Hearty country lentil & vegetable stew',
@@ -150,11 +191,49 @@ export default function Meals() {
     setFeedback('')
 
     try {
-      const res = await updateWeeklyMeal(token, draft)
+      const res = await updateWeeklyMeal(token, {
+        ...draft,
+        month: selectedMonth,
+        weekNumber: selectedWeek,
+      })
       if (alive.current) {
         setMeals((prev) => [...prev.filter((m) => m.dayOfWeek !== res.meal.dayOfWeek), res.meal])
         setEditing(false)
         setFeedback(t.mealSaved)
+      }
+    } catch {
+      if (alive.current) setSaveError(t.saveError)
+    } finally {
+      if (alive.current) setSaving(false)
+    }
+  }
+
+  async function handleCopyPrevMonth() {
+    if (!token || saving) return
+    const prevMonth = shiftMonth(selectedMonth, -1)
+    setSaving(true)
+    setSaveError('')
+    setFeedback('')
+    try {
+      await copyMonthlyMeals(token, prevMonth, selectedMonth)
+      setFeedback(t.copyMonthSuccess)
+      const res = await listWeeklyMeals(token, selectedMonth, selectedWeek)
+      if (alive.current) {
+        setMeals(res.meals)
+        const currentMeal = res.meals.find((m) => m.dayOfWeek === activeDay)
+        if (currentMeal) {
+          setDraft({
+            dayOfWeek: currentMeal.dayOfWeek,
+            month: selectedMonth,
+            weekNumber: selectedWeek,
+            breakfast: currentMeal.breakfast,
+            morningSnack: currentMeal.morningSnack,
+            lunch: currentMeal.lunch,
+            afternoonSnack: currentMeal.afternoonSnack,
+            allergens: currentMeal.allergens,
+            notes: currentMeal.notes,
+          })
+        }
       }
     } catch {
       if (alive.current) setSaveError(t.saveError)
@@ -180,6 +259,76 @@ export default function Meals() {
     <section className="panel meals-panel">
       <h1>{t.mealsTitle}</h1>
       <p>{t.mealsSubtitle}</p>
+
+      {/* Monthly Navigation Header */}
+      <div className="card meal-month-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', padding: '12px 16px', margin: '14px 0', borderRadius: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            className="btn ghost small-btn"
+            aria-label={t.prevMonthBtn}
+            onClick={() => setSelectedMonth((m) => shiftMonth(m, -1))}
+          >
+            ◀
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <strong style={{ fontSize: '16px' }}>📅 {formatMonthName(selectedMonth, lang)}</strong>
+            {selectedMonth === currentMonthStr && (
+              <span className="badge role-badge" style={{ fontSize: '11px' }}>{t.currentMonthBadge}</span>
+            )}
+          </div>
+          <button
+            type="button"
+            className="btn ghost small-btn"
+            aria-label={t.nextMonthBtn}
+            onClick={() => setSelectedMonth((m) => shiftMonth(m, 1))}
+          >
+            ▶
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <input
+            type="month"
+            aria-label={t.menuMonthLabel}
+            value={selectedMonth}
+            onChange={(e) => e.target.value && setSelectedMonth(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--kd-line)', fontSize: '13px', boxSizing: 'border-box' }}
+          />
+          {canEdit && (
+            <button
+              type="button"
+              className="btn secondary small-btn"
+              onClick={handleCopyPrevMonth}
+              disabled={saving}
+              title={`${t.copyFromPrevMonth} (${formatMonthName(shiftMonth(selectedMonth, -1), lang)})`}
+            >
+              {t.copyFromPrevMonth}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Week in Month Selector */}
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '14px' }}>
+        <button
+          type="button"
+          className={`filter-btn ${selectedWeek === 0 ? 'active' : ''}`}
+          onClick={() => setSelectedWeek(0)}
+        >
+          {t.allWeeks}
+        </button>
+        {[1, 2, 3, 4].map((wk) => (
+          <button
+            key={wk}
+            type="button"
+            className={`filter-btn ${selectedWeek === wk ? 'active' : ''}`}
+            onClick={() => setSelectedWeek(wk)}
+          >
+            {t.menuWeekLabel} {wk}
+          </button>
+        ))}
+      </div>
 
       {/* Weekday Switcher Tabs */}
       <div className="meal-tabs">
