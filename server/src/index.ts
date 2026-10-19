@@ -721,11 +721,13 @@ app.get('/api/invoices/:id/receipt', requireAuth, (req, res) => {
 
 const parentSchema = z.object({ name: z.string().trim().min(1).max(200), email: z.string().trim().email().max(254), password: z.string().min(10).refine((value) => Buffer.byteLength(value, 'utf8') <= 72) }).strict()
 app.get('/api/parents', requireAuth, (req, res) => {
-  if (authed(req).role !== 'director') return res.status(403).json({ error: 'forbidden' })
+  const caller = authed(req)
+  if (caller.role !== 'director' && caller.role !== 'superadmin') return res.status(403).json({ error: 'forbidden' })
   res.json({ parents: db.prepare("SELECT id, name, email, role FROM users WHERE role = 'parent' ORDER BY name, id").all() })
 })
 app.post('/api/parents', requireAuth, (req, res) => {
-  if (authed(req).role !== 'director') return res.status(403).json({ error: 'forbidden' })
+  const caller = authed(req)
+  if (caller.role !== 'director' && caller.role !== 'superadmin') return res.status(403).json({ error: 'forbidden' })
   const parsed = parentSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
   const body = parsed.data
@@ -734,17 +736,77 @@ app.post('/api/parents', requireAuth, (req, res) => {
   db.prepare('INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)').run(parent.id, parent.name, parent.email, bcrypt.hashSync(body.password, 10), parent.role)
   res.status(201).json({ parent })
 })
+
+const staffSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  email: z.string().trim().email().max(254),
+  password: z.string().min(6).refine((value) => Buffer.byteLength(value, 'utf8') <= 72),
+  role: z.enum(['teacher', 'director']),
+}).strict()
+
+app.get('/api/staff', requireAuth, (req, res) => {
+  const caller = authed(req)
+  if (caller.role !== 'director' && caller.role !== 'superadmin') return res.status(403).json({ error: 'forbidden' })
+  const staff = db.prepare("SELECT id, name, email, role FROM users WHERE role IN ('teacher', 'director') ORDER BY role, name").all()
+  res.json({ staff })
+})
+
+app.post('/api/staff', requireAuth, (req, res) => {
+  const caller = authed(req)
+  if (caller.role !== 'director' && caller.role !== 'superadmin') return res.status(403).json({ error: 'forbidden' })
+  const parsed = staffSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+  const body = parsed.data
+  if (caller.role === 'director' && body.role === 'director') {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+  if (db.prepare('SELECT id FROM users WHERE lower(email) = lower(?)').get(body.email)) {
+    return res.status(409).json({ error: 'email_exists' })
+  }
+  const id = randomUUID()
+  db.prepare('INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)').run(
+    id,
+    body.name,
+    body.email.toLowerCase(),
+    bcrypt.hashSync(body.password, 10),
+    body.role,
+  )
+  res.status(201).json({ staff: { id, name: body.name, email: body.email.toLowerCase(), role: body.role } })
+})
+
+const resetPasswordSchema = z.object({
+  newPassword: z.string().min(6).refine((value) => Buffer.byteLength(value, 'utf8') <= 72),
+})
+
+app.post('/api/users/:id/reset-password', requireAuth, (req, res) => {
+  const caller = authed(req)
+  if (caller.role !== 'director' && caller.role !== 'superadmin') return res.status(403).json({ error: 'forbidden' })
+  const target = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(req.params.id) as DbUser | undefined
+  if (!target) return res.status(404).json({ error: 'user_not_found' })
+  if (caller.role !== 'superadmin' && (target.role === 'superadmin' || target.role === 'director')) {
+    return res.status(403).json({ error: 'forbidden' })
+  }
+  const parsed = resetPasswordSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(
+    bcrypt.hashSync(parsed.data.newPassword, 10),
+    target.id,
+  )
+  res.json({ ok: true, userId: target.id })
+})
+
 const childSchema = z.object({ name: z.string().trim().min(1).max(200), groupName: z.string().trim().min(1).max(200), parentUserId: z.string().trim().min(1), allergies: z.string().max(500).optional().default('') }).strict()
 function childRow(id: string) {
   const row = db.prepare("SELECT id, name, group_name AS groupName, parent_user_id AS parentUserId, photo_consent AS photoConsent, COALESCE(allergies, '') AS allergies FROM children WHERE id = ?").get(id) as { photoConsent: number; allergies: string }
   return { ...row, photoConsent: Boolean(row.photoConsent), allergies: row.allergies || '' }
 }
 app.post('/api/children', requireAuth, (req, res) => {
-  if (authed(req).role !== 'director') return res.status(403).json({ error: 'forbidden' })
+  const caller = authed(req)
+  if (caller.role !== 'director' && caller.role !== 'superadmin') return res.status(403).json({ error: 'forbidden' })
   const parsed = childSchema.extend({ requestId: z.string().uuid().optional() }).safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
   const { requestId, ...body } = parsed.data
-  const user = authed(req)
+  const user = caller
   const payload = JSON.stringify(body)
   if (requestId) {
     const prior = db.prepare('SELECT payload, child_id AS childId FROM child_requests WHERE user_id = ? AND request_id = ?').get(user.id, requestId) as { payload: string; childId: string } | undefined
@@ -764,7 +826,8 @@ app.post('/api/children', requireAuth, (req, res) => {
   res.status(201).json({ child: childRow(id) })
 })
 app.patch('/api/children/:id', requireAuth, (req, res) => {
-  if (authed(req).role !== 'director') return res.status(403).json({ error: 'forbidden' })
+  const caller = authed(req)
+  if (caller.role !== 'director' && caller.role !== 'superadmin') return res.status(403).json({ error: 'forbidden' })
   const parsed = childSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
   if (!db.prepare('SELECT id FROM children WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: 'child_not_found' })

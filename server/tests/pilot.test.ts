@@ -1746,5 +1746,69 @@ test('first-time setup: setup-status and setup-admin bootstrap flow in productio
   }
 })
 
+test('staff and user management: list staff, create teachers, and reset passwords', async () => {
+  const f = await fixture()
+  try {
+    await f.start()
+    const director = await f.login('director')
+    const parent = await f.login('parent')
+
+    // 1. Parent cannot access staff
+    const parentRes = await f.request('staff', parent)
+    assert.equal(parentRes.status, 403)
+
+    // 2. Director can list staff
+    const listRes = await f.request('staff', director)
+    assert.equal(listRes.status, 200)
+    assert.ok(Array.isArray(listRes.data.staff))
+
+    // 3. Director can create a teacher
+    const teacherDraft = {
+      name: 'Teacher Valbona',
+      email: 'valbona.test@kidoland.demo',
+      password: 'password123',
+      role: 'teacher',
+    }
+    const createRes = await f.request('staff', director, teacherDraft)
+    assert.equal(createRes.status, 201)
+    assert.equal(createRes.data.staff.role, 'teacher')
+    assert.equal(createRes.data.staff.email, 'valbona.test@kidoland.demo')
+
+    // 4. Director cannot create a director
+    const badDirectorRes = await f.request('staff', director, {
+      name: 'Second Director',
+      email: 'director2@kidoland.demo',
+      password: 'password123',
+      role: 'director',
+    })
+    assert.equal(badDirectorRes.status, 403)
+
+    // 5. Created teacher can log in
+    const teacherLogin = await f.request('auth/login', undefined, {
+      email: 'valbona.test@kidoland.demo',
+      password: 'password123',
+    })
+    assert.equal(teacherLogin.status, 200)
+    assert.equal(teacherLogin.data.user.role, 'teacher')
+
+    // 6. Director can reset the teacher's password
+    const resetRes = await f.request(`users/${createRes.data.staff.id}/reset-password`, director, {
+      newPassword: 'new-password-456',
+    })
+    assert.equal(resetRes.status, 200)
+    assert.equal(resetRes.data.ok, true)
+
+    // 7. Teacher can log in with new password
+    const newLogin = await f.request('auth/login', undefined, {
+      email: 'valbona.test@kidoland.demo',
+      password: 'new-password-456',
+    })
+    assert.equal(newLogin.status, 200)
+  } finally {
+    await f.dispose()
+  }
+})
+
+
 
 

@@ -116,6 +116,21 @@ export async function meRequest(token: string) {
   return api<{ user: User }>('/api/auth/me', {}, token)
 }
 
+export async function listStaff(token: string) {
+  return api<{ staff: User[] }>('/api/staff', {}, token)
+}
+
+export async function createStaff(token: string, body: { name: string; email: string; password: string; role: 'teacher' | 'director' }) {
+  return api<{ staff: User }>('/api/staff', { method: 'POST', body: JSON.stringify(body) }, token)
+}
+
+export async function resetUserPassword(token: string, userId: string, newPassword: string) {
+  return api<{ ok: boolean; userId: string }>(`/api/users/${userId}/reset-password`, {
+    method: 'POST',
+    body: JSON.stringify({ newPassword }),
+  }, token)
+}
+
 export async function listChildren(token: string) {
   return api<{ children: Child[] }>('/api/children', {}, token)
 }
