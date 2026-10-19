@@ -155,6 +155,24 @@ export default function Meals() {
     }
   }
 
+  function startEditing() {
+    setSaveError('')
+    setFeedback('')
+    const currentMeal = meals.find((m) => m.dayOfWeek === activeDay)
+    setDraft({
+      dayOfWeek: activeDay,
+      month: selectedMonth,
+      weekNumber: selectedWeek,
+      breakfast: currentMeal?.breakfast || '',
+      morningSnack: currentMeal?.morningSnack || '',
+      lunch: currentMeal?.lunch || '',
+      afternoonSnack: currentMeal?.afternoonSnack || '',
+      allergens: currentMeal?.allergens || '',
+      notes: currentMeal?.notes || '',
+    })
+    setEditing(true)
+  }
+
   function applyPreset(type: 'mediterranean' | 'vegetarian') {
     if (type === 'mediterranean') {
       setDraft((d) => ({
@@ -198,6 +216,17 @@ export default function Meals() {
       })
       if (alive.current) {
         setMeals((prev) => [...prev.filter((m) => m.dayOfWeek !== res.meal.dayOfWeek), res.meal])
+        setDraft({
+          dayOfWeek: res.meal.dayOfWeek,
+          month: selectedMonth,
+          weekNumber: selectedWeek,
+          breakfast: res.meal.breakfast || '',
+          morningSnack: res.meal.morningSnack || '',
+          lunch: res.meal.lunch || '',
+          afternoonSnack: res.meal.afternoonSnack || '',
+          allergens: res.meal.allergens || '',
+          notes: res.meal.notes || '',
+        })
         setEditing(false)
         setFeedback(t.mealSaved)
       }
@@ -243,6 +272,7 @@ export default function Meals() {
   }
 
   const selectedMeal = meals.find((m) => m.dayOfWeek === activeDay)
+  const hasMealContent = Boolean(selectedMeal && (selectedMeal.breakfast?.trim() || selectedMeal.lunch?.trim()))
 
   // Allergen detection for parent's linked children
   const childAllergies = children
@@ -358,7 +388,7 @@ export default function Meals() {
       {loading && <p role="status">{t.loading}</p>}
 
       {/* View Selected Day Menu */}
-      {!loading && !editing && selectedMeal && (
+      {!loading && !editing && hasMealContent && selectedMeal && (
         <article className="roster-card meal-day-card">
           <div className="meal-card-header">
             <h2>{t[DAYS.find((d) => d.key === activeDay)!.labelKey]}</h2>
@@ -366,7 +396,7 @@ export default function Meals() {
               <button
                 type="button"
                 className="btn ghost small-btn"
-                onClick={() => setEditing(true)}
+                onClick={startEditing}
               >
                 ✏️ {t.editMeal}
               </button>
@@ -387,22 +417,22 @@ export default function Meals() {
           <div className="meal-grid">
             <div className="meal-item">
               <h3>🥣 {t.breakfast}</h3>
-              <p>{selectedMeal.breakfast}</p>
+              <p>{selectedMeal.breakfast || '—'}</p>
             </div>
 
             <div className="meal-item">
               <h3>🍎 {t.morningSnack}</h3>
-              <p>{selectedMeal.morningSnack}</p>
+              <p>{selectedMeal.morningSnack || '—'}</p>
             </div>
 
             <div className="meal-item">
               <h3>🍲 {t.lunch}</h3>
-              <p>{selectedMeal.lunch}</p>
+              <p>{selectedMeal.lunch || '—'}</p>
             </div>
 
             <div className="meal-item">
               <h3>🍪 {t.afternoonSnack}</h3>
-              <p>{selectedMeal.afternoonSnack}</p>
+              <p>{selectedMeal.afternoonSnack || '—'}</p>
             </div>
           </div>
 
@@ -420,11 +450,33 @@ export default function Meals() {
         </article>
       )}
 
+      {/* Empty State when no meal registered for this day */}
+      {!loading && !editing && !hasMealContent && (
+        <article className="roster-card meal-day-card meal-empty-card" style={{ padding: '36px 24px', textAlign: 'center' }}>
+          <div className="meal-card-header" style={{ justifyContent: 'center', marginBottom: '14px' }}>
+            <h2>{t[DAYS.find((d) => d.key === activeDay)!.labelKey]}</h2>
+          </div>
+          <p style={{ fontSize: '15px', color: 'var(--kd-muted)', margin: '0 auto 20px auto', maxWidth: '420px' }}>
+            🍽️ {t.noMealForDay}
+          </p>
+          {canEdit && (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={startEditing}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', margin: '0 auto' }}
+            >
+              + {t.addMeal}
+            </button>
+          )}
+        </article>
+      )}
+
       {/* Staff Meal Editor */}
       {!loading && editing && canEdit && (
         <form className="login-form meal-form" onSubmit={handleSave}>
           <fieldset disabled={saving}>
-            <h2>{t.editMeal} · {t[DAYS.find((d) => d.key === activeDay)!.labelKey]}</h2>
+            <h2>{hasMealContent ? t.editMeal : t.addMeal} · {t[DAYS.find((d) => d.key === activeDay)!.labelKey]}</h2>
 
             <div className="meal-presets">
               <button
@@ -456,7 +508,6 @@ export default function Meals() {
             <label>
               {t.morningSnack}
               <input
-                required
                 maxLength={500}
                 value={draft.morningSnack}
                 onChange={(e) => setDraft({ ...draft, morningSnack: e.target.value })}
@@ -476,7 +527,6 @@ export default function Meals() {
             <label>
               {t.afternoonSnack}
               <input
-                required
                 maxLength={500}
                 value={draft.afternoonSnack}
                 onChange={(e) => setDraft({ ...draft, afternoonSnack: e.target.value })}

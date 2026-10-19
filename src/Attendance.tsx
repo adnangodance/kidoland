@@ -46,7 +46,7 @@ export default function Attendance({ initialDate }: { initialDate?: string }) {
   const [saved, setSaved] = useState<string | null>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const dateValid = validDate(date)
-  const canMark = user?.role === 'teacher' || user?.role === 'director'
+  const canMark = user?.role === 'teacher' || user?.role === 'director' || user?.role === 'superadmin'
 
   useEffect(() => { heading.current?.focus() }, [])
 

@@ -775,6 +775,39 @@ test('weekly meals API: list all days, staff update, and parent authorization', 
     const updatedList = await request('meals', parent)
     const tuesday = updatedList.data.meals.find((m: { dayOfWeek: string }) => m.dayOfWeek === 'tuesday')
     assert.equal(tuesday.lunch, 'Peshk salmon me perime / Salmon fillet with roasted vegetables')
+
+    // Monthly meal update by teacher (optional snacks)
+    const monthlyUpdate = await request('meals', teacher, {
+      dayOfWeek: 'wednesday',
+      month: '2026-11',
+      weekNumber: 2,
+      breakfast: 'Brumëra furre dhe lëng portokalli / Fresh bakery & orange juice',
+      lunch: 'Tavë kosi me oriz dhe kos lope / Traditional baked casserole with yogurt',
+      allergens: 'Lactose / Qumësht',
+      notes: 'November Week 2 special',
+    })
+    assert.equal(monthlyUpdate.status, 200)
+    assert.equal(monthlyUpdate.data.meal.breakfast, 'Brumëra furre dhe lëng portokalli / Fresh bakery & orange juice')
+
+    // Querying monthly meals returns all 5 weekdays including the updated Wednesday
+    const novList = await request('meals?month=2026-11&week=2', parent)
+    assert.equal(novList.status, 200)
+    assert.equal(novList.data.meals.length, 5)
+    const novWednesday = novList.data.meals.find((m: { dayOfWeek: string }) => m.dayOfWeek === 'wednesday')
+    assert.equal(novWednesday.lunch, 'Tavë kosi me oriz dhe kos lope / Traditional baked casserole with yogurt')
+    // Monday is still present from defaults
+    const novMonday = novList.data.meals.find((m: { dayOfWeek: string }) => m.dayOfWeek === 'monday')
+    assert.ok(novMonday.breakfast)
+
+    // Copy month from 2026-11 to 2026-12
+    const copyRes = await request('meals/copy-month', teacher, {
+      fromMonth: '2026-11',
+      toMonth: '2026-12',
+    })
+    assert.equal(copyRes.status, 200)
+    const decList = await request('meals?month=2026-12&week=2', parent)
+    assert.equal(decList.status, 200)
+    assert.equal(decList.data.meals.length, 5)
   } finally {
     await f.dispose()
   }

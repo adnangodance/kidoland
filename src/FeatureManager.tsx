@@ -341,7 +341,17 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
       }
     } catch (err: any) {
       if (alive.current) {
-        setCreateError(err.message || 'Failed to create account. Check email uniqueness.')
+        if (err?.status === 409 || String(err?.message || '').includes('email_exists') || String(err?.error || '').includes('email_exists')) {
+          setCreateError(t.emailExists)
+        } else if (err?.status === 400) {
+          setCreateError(
+            createRole === 'parent'
+              ? (lang === 'sq' ? 'Fjalëkalimi i prindit duhet të ketë të paktën 10 karaktere.' : 'Parent password must be at least 10 characters.')
+              : (lang === 'sq' ? 'Ju lutem kontrolloni formatin e email-it dhe fjalëkalimin.' : 'Please check email format and password.')
+          )
+        } else {
+          setCreateError(err.message || t.saveError)
+        }
       }
     } finally {
       if (alive.current) {
@@ -861,9 +871,14 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
                   minLength={createRole === 'parent' ? 10 : 6}
                   value={createPassword}
                   onChange={(e) => setCreatePassword(e.target.value)}
-                  placeholder={createRole === 'parent' ? 'Min 10 characters' : 'Min 6 characters'}
+                  placeholder={createRole === 'parent' ? (lang === 'sq' ? 'Minimum 10 karaktere' : 'Min 10 characters') : (lang === 'sq' ? 'Minimum 6 karaktere' : 'Min 6 characters')}
                   style={{ width: '100%', boxSizing: 'border-box' }}
                 />
+                <small style={{ color: 'var(--kd-muted)', fontSize: '11px', marginTop: '4px', display: 'block' }}>
+                  {createRole === 'parent'
+                    ? (lang === 'sq' ? '🔒 Llogaria e prindit kërkon të paktën 10 karaktere për siguri.' : '🔒 Parent accounts require at least 10 characters for security.')
+                    : (lang === 'sq' ? '🔒 Kërkohen të paktën 6 karaktere.' : '🔒 Requires at least 6 characters.')}
+                </small>
               </div>
               <div className="modal-actions" style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
                 <button type="submit" className="btn primary" disabled={createBusy}>

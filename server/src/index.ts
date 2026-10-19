@@ -193,7 +193,7 @@ app.get('/api/attendance', requireAuth, (req, res) => {
 
 app.post('/api/attendance', requireAuth, (req, res) => {
   const user = authed(req)
-  if (user.role !== 'teacher' && user.role !== 'director') {
+  if (user.role !== 'teacher' && user.role !== 'director' && user.role !== 'superadmin') {
     return res.status(403).json({ error: 'forbidden' })
   }
   const parsed = attendanceBody.safeParse(req.body)
@@ -266,7 +266,7 @@ const reportSchema = z.object({
 
 app.post('/api/reports', requireAuth, (req, res) => {
   const user = authed(req)
-  if (user.role !== 'teacher' && user.role !== 'director') {
+  if (user.role !== 'teacher' && user.role !== 'director' && user.role !== 'superadmin') {
     return res.status(403).json({ error: 'forbidden' })
   }
   const parsed = reportSchema.safeParse(req.body)
@@ -610,7 +610,7 @@ app.get('/api/invoices', requireAuth, (req, res) => {
 })
 app.post('/api/invoices', requireAuth, (req, res) => {
   const user = authed(req)
-  if (user.role !== 'director' && user.role !== 'teacher') return res.status(403).json({ error: 'forbidden' })
+  if (user.role !== 'director' && user.role !== 'teacher' && user.role !== 'superadmin') return res.status(403).json({ error: 'forbidden' })
   const parsed = invoiceSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
   const body = parsed.data
@@ -637,7 +637,8 @@ app.post('/api/invoices', requireAuth, (req, res) => {
   res.status(201).json({ invoice: invoiceWithItems(db.prepare(`${invoiceSelect} WHERE i.id = ?`).get(id)) })
 })
 app.patch('/api/invoices/:id/paid', requireAuth, (req, res) => {
-  if (authed(req).role !== 'director') return res.status(403).json({ error: 'forbidden' })
+  const user = authed(req)
+  if (user.role !== 'director' && user.role !== 'superadmin') return res.status(403).json({ error: 'forbidden' })
   const row = db.prepare(`${invoiceSelect} WHERE i.id = ?`).get(req.params.id)
   if (!row) return res.status(404).json({ error: 'not_found' })
   db.prepare("UPDATE invoices SET status = 'paid', paid_at = ?, payment_method = 'manual' WHERE id = ? AND status = 'pending'").run(new Date().toISOString(), req.params.id)
@@ -1376,9 +1377,9 @@ const mealBody = z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
   weekNumber: z.number().int().min(0).max(5).optional().default(0),
   breakfast: z.string().trim().min(1).max(500),
-  morningSnack: z.string().trim().min(1).max(500),
+  morningSnack: z.string().max(500).optional().default(''),
   lunch: z.string().trim().min(1).max(500),
-  afternoonSnack: z.string().trim().min(1).max(500),
+  afternoonSnack: z.string().max(500).optional().default(''),
   allergens: z.string().max(300).optional().default(''),
   notes: z.string().max(1000).optional().default(''),
 }).strict()
@@ -1392,20 +1393,44 @@ app.get('/api/meals', requireAuth, (req, res) => {
     : 0
 
   if (month) {
-    let meals = db.prepare(`${monthlyMealSelect} WHERE menu_month = ? AND week_number = ? ORDER BY CASE day_of_week WHEN 'monday' THEN 1 WHEN 'tuesday' THEN 2 WHEN 'wednesday' THEN 3 WHEN 'thursday' THEN 4 WHEN 'friday' THEN 5 ELSE 6 END`).all(month, weekNumber) as any[]
+    const days: DayOfWeek[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
+    const templateMeals = db.prepare(mealSelect).all() as any[]
+    const templateMap = new Map(templateMeals.map((m) => [m.dayOfWeek, m]))
 
-    if (meals.length === 0 && weekNumber !== 0) {
-      meals = db.prepare(`${monthlyMealSelect} WHERE menu_month = ? AND week_number = 0 ORDER BY CASE day_of_week WHEN 'monday' THEN 1 WHEN 'tuesday' THEN 2 WHEN 'wednesday' THEN 3 WHEN 'thursday' THEN 4 WHEN 'friday' THEN 5 ELSE 6 END`).all(month) as any[]
-    }
+    const specificWeekMeals = db.prepare(`${monthlyMealSelect} WHERE menu_month = ? AND week_number = ?`).all(month, weekNumber) as any[]
+    const specificMap = new Map(specificWeekMeals.map((m) => [m.dayOfWeek, m]))
 
-    if (meals.length === 0) {
-      const template = db.prepare(mealSelect).all() as any[]
-      meals = template.map((m) => ({
-        ...m,
+    const week0Meals = weekNumber !== 0
+      ? (db.prepare(`${monthlyMealSelect} WHERE menu_month = ? AND week_number = 0`).all(month) as any[])
+      : []
+    const week0Map = new Map(week0Meals.map((m) => [m.dayOfWeek, m]))
+
+    const meals = days.map((day) => {
+      if (specificMap.has(day)) return specificMap.get(day)
+      if (week0Map.has(day)) return { ...week0Map.get(day), weekNumber }
+      const templ = templateMap.get(day)
+      if (templ) {
+        return {
+          ...templ,
+          menuMonth: month,
+          weekNumber,
+        }
+      }
+      return {
+        id: randomUUID(),
         menuMonth: month,
         weekNumber,
-      }))
-    }
+        dayOfWeek: day,
+        breakfast: '',
+        morningSnack: '',
+        lunch: '',
+        afternoonSnack: '',
+        allergens: '',
+        notes: '',
+        updatedBy: null,
+        updatedAt: null,
+      }
+    })
 
     return res.json({ meals, month, weekNumber })
   }

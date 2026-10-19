@@ -672,6 +672,14 @@ kbd { font-family: inherit; font-size: 10px; color: #74786c; }
 .family-statuses { gap: 17px; }
 .family-statuses strong { display: inline-flex; align-items: center; font-weight: 500; }
 /* The report editor uses document sections rather than nested cards. */
+.reports-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
 .report-form.login-form { padding: 28px 32px 0; max-width: 100%; width: 100%; margin: 24px 0; border: 1px solid var(--kd-line); border-radius: 8px; box-sizing: border-box; }
 .report-form > h2 { font-size: 19px; }
 .report-form > fieldset { gap: 0; }
@@ -806,6 +814,35 @@ kbd { font-family: inherit; font-size: 10px; color: #74786c; }
   gap: 16px;
   box-sizing: border-box;
   max-width: 100%;
+  width: 100%;
+}
+
+@media (min-width: 900px) {
+  .daily-care-cards-stack {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 16px;
+  }
+  .daily-care-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  .daily-care-card .care-choice-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 601px) and (max-width: 899px) {
+  .daily-care-cards-stack {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+  }
+  .daily-care-card .care-choice-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .daily-care-card {
@@ -816,6 +853,7 @@ kbd { font-family: inherit; font-size: 10px; color: #74786c; }
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   box-sizing: border-box;
   max-width: 100%;
+  width: 100%;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 

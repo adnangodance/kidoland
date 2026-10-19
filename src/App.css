@@ -363,6 +363,14 @@ input:focus-visible {
 
 .nav button { min-height: 44px; }
 .attendance-panel { max-width: 960px; }
+.reports-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
 .attendance-date {
   display: flex;
   align-items: center;

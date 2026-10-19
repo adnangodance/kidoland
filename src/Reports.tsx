@@ -327,9 +327,9 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
     const tokens = value.split('|')
     if (!tokens.every((code) => all.some(([id]) => id === code))) return value
     return tokens.map((code) => { const option = all.find(([id]) => id === code)!; return t[option[1]] }).join(' · ')
-
   }
-  return <section className="panel reports-panel"><h1>{t.reportsTitle}</h1><p className="panel-sub">{t.reportsDescription}</p>
+
+  return <section className="panel reports-panel" style={{ maxWidth: '100%', boxSizing: 'border-box' }}><h1>{t.reportsTitle}</h1><p className="panel-sub">{t.reportsDescription}</p>
     <div className="filters"><label>{t.paymentsChild}<select disabled={busy || !rosterReady} value={childId} onChange={(e) => changeContext(e.target.value, date)}>{children.map((c) => <option key={c.id} value={c.id}>{isSeaGodanci(c.name) ? '⭐ ' : ''}{c.name} · {c.groupName}</option>)}</select></label>
     <label>{t.attendanceDate}<input type="date" disabled={busy} value={date} onChange={(e) => changeContext(childId, e.target.value)} /></label><button className="btn ghost" disabled={busy} onClick={() => { if (date !== localCalendarDate()) changeContext(childId, localCalendarDate()) }}>{t.attendanceToday}</button></div>
     {rosterReady && children.length > 1 && (
