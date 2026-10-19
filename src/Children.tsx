@@ -367,7 +367,7 @@ export default function Children() {
   const alive = useAlive()
   const loads = useRef(0)
   const createRequest = useRef<{ payload: string; id: string } | null>(null)
-  const director = user?.role === 'director'
+  const director = user?.role === 'director' || user?.role === 'superadmin'
   const [children, setChildren] = useState<Child[]>([])
   const [parents, setParents] = useState<User[]>([])
   const [loading, setLoading] = useState(true)

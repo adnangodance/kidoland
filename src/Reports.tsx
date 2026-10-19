@@ -65,9 +65,15 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [batchSaved, setBatchSaved] = useState(false)
-  const [selectedFood, setSelectedFood] = useState('')
   const [customFood, setCustomFood] = useState('')
   const [selectedIntake, setSelectedIntake] = useState('')
+  const [activeCourse, setActiveCourse] = useState<'breakfast' | 'lunch' | 'snack' | 'all'>(() => {
+    const hour = new Date().getHours()
+    if (hour < 11) return 'breakfast'
+    if (hour < 14) return 'lunch'
+    return 'snack'
+  })
+  const [showCustomInput, setShowCustomInput] = useState(false)
   const [weeklyMeals, setWeeklyMeals] = useState<WeeklyMeal[]>([])
   const canWrite = user?.role !== 'parent'
   const selectedChild = children.find((c) => c.id === childId)
@@ -90,15 +96,70 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
     return weeklyMeals.find((m) => m.dayOfWeek === activeDayOfWeek)
   }, [weeklyMeals, activeDayOfWeek])
 
+  const currentDishText = useMemo(() => {
+    if (!todaysMenu) return ''
+    if (activeCourse === 'breakfast') return localizeDish(todaysMenu.breakfast, lang)
+    if (activeCourse === 'lunch') return localizeDish(todaysMenu.lunch, lang)
+    if (activeCourse === 'snack') return localizeDish(todaysMenu.morningSnack || todaysMenu.afternoonSnack, lang)
+    if (activeCourse === 'all') {
+      const b = localizeDish(todaysMenu.breakfast, lang)
+      const l = localizeDish(todaysMenu.lunch, lang)
+      return [b, l].filter(Boolean).join(', ')
+    }
+    return ''
+  }, [todaysMenu, activeCourse, lang])
+
+  function getCourseDish(course: 'breakfast' | 'lunch' | 'snack' | 'all') {
+    if (!todaysMenu) return ''
+    if (course === 'breakfast') return localizeDish(todaysMenu.breakfast, lang)
+    if (course === 'lunch') return localizeDish(todaysMenu.lunch, lang)
+    if (course === 'snack') return localizeDish(todaysMenu.morningSnack || todaysMenu.afternoonSnack, lang)
+    if (course === 'all') {
+      const b = localizeDish(todaysMenu.breakfast, lang)
+      const l = localizeDish(todaysMenu.lunch, lang)
+      return [b, l].filter(Boolean).join(', ')
+    }
+    return ''
+  }
+
+  function getCourseName(course: 'breakfast' | 'lunch' | 'snack' | 'all') {
+    if (course === 'breakfast') return t.mealBreakfast
+    if (course === 'lunch') return t.mealLunch
+    if (course === 'snack') return t.mealSnack
+    return t.mealAllMeals
+  }
+
+  function applyMealUpdate(course: 'breakfast' | 'lunch' | 'snack' | 'all', custom: string, intake: string) {
+    const intakeLabels: Record<string, string> = {
+      'intake:very_well': t.mealIntakeVeryWell,
+      'intake:well': t.mealIntakeWell,
+      'intake:some': t.mealIntakeSome,
+      'intake:little': t.mealIntakeLittle,
+    }
+    const intakeLabel = intakeLabels[intake] || ''
+    if (!intakeLabel) {
+      setDraft((d) => ({ ...d, meals: '' }))
+      return
+    }
+
+    const courseLabel = getCourseName(course)
+    const dish = custom.trim() || getCourseDish(course)
+
+    if (dish) {
+      setDraft((d) => ({ ...d, meals: `${courseLabel}: ${dish} · ${intakeLabel}` }))
+    } else {
+      setDraft((d) => ({ ...d, meals: `${courseLabel} · ${intakeLabel}` }))
+    }
+  }
+
   useEffect(() => {
     if (!draft.meals) {
-      setSelectedFood('')
       setCustomFood('')
       setSelectedIntake('')
       return
     }
     if (draft.meals === 'meals:all') {
-      setSelectedIntake('intake:well')
+      setSelectedIntake('intake:very_well')
       return
     }
     if (draft.meals === 'meals:some') {
@@ -112,109 +173,93 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
     if (draft.meals.includes(' · ')) {
       const parts = draft.meals.split(' · ')
       const foodPart = parts[0] || ''
-      setCustomFood(foodPart)
       if (foodPart.startsWith(`${t.mealBreakfast}:`) || foodPart === t.mealBreakfast) {
-        setSelectedFood(t.mealBreakfast)
+        setActiveCourse('breakfast')
+        const afterPrefix = foodPart.replace(`${t.mealBreakfast}:`, '').trim()
+        if (afterPrefix && afterPrefix !== localizeDish(todaysMenu?.breakfast || '', lang)) {
+          setCustomFood(afterPrefix)
+          setShowCustomInput(true)
+        }
       } else if (foodPart.startsWith(`${t.mealLunch}:`) || foodPart === t.mealLunch) {
-        setSelectedFood(t.mealLunch)
+        setActiveCourse('lunch')
+        const afterPrefix = foodPart.replace(`${t.mealLunch}:`, '').trim()
+        if (afterPrefix && afterPrefix !== localizeDish(todaysMenu?.lunch || '', lang)) {
+          setCustomFood(afterPrefix)
+          setShowCustomInput(true)
+        }
       } else if (foodPart.startsWith(`${t.mealSnack}:`) || foodPart === t.mealSnack) {
-        setSelectedFood(t.mealSnack)
+        setActiveCourse('snack')
+        const afterPrefix = foodPart.replace(`${t.mealSnack}:`, '').trim()
+        const snackDish = localizeDish(todaysMenu?.morningSnack || todaysMenu?.afternoonSnack || '', lang)
+        if (afterPrefix && afterPrefix !== snackDish) {
+          setCustomFood(afterPrefix)
+          setShowCustomInput(true)
+        }
       } else if (foodPart.startsWith(`${t.mealAllMeals}:`) || foodPart === t.mealAllMeals) {
-        setSelectedFood(t.mealAllMeals)
+        setActiveCourse('all')
       } else {
-        setSelectedFood(foodPart)
+        setCustomFood(foodPart)
+        setShowCustomInput(true)
       }
+
       const intakePart = parts[1] || ''
-      if (intakePart.includes(t.mealIntakeVeryWell) || intakePart.includes('Shumë') || intakePart.includes('Very')) {
+      if (intakePart === t.mealIntakeVeryWell || intakePart.includes('Shumë') || intakePart.includes('Very') || intakePart.includes('gjithën') || intakePart.includes('All')) {
         setSelectedIntake('intake:very_well')
-      } else if (intakePart.includes(t.mealIntakeWell) || intakePart.includes('Mirë') || intakePart.includes('Well')) {
+      } else if (intakePart === t.mealIntakeWell || intakePart.includes('Mirë') || intakePart.includes('Well') || intakePart.includes('umicën') || intakePart.includes('Most')) {
         setSelectedIntake('intake:well')
-      } else if (intakePart.includes(t.mealIntakeSome) || intakePart.includes('Pak') || intakePart.includes('Some')) {
+      } else if (intakePart === t.mealIntakeSome || intakePart.includes('Pak') || intakePart.includes('Some') || intakePart.includes('jysmën') || intakePart.includes('Half')) {
         setSelectedIntake('intake:some')
-      } else if (intakePart.includes(t.mealIntakeLittle) || intakePart.includes('pak') || intakePart.includes('Little')) {
+      } else if (intakePart === t.mealIntakeLittle || intakePart.includes('pak') || intakePart.includes('Little')) {
         setSelectedIntake('intake:little')
       }
     } else {
       setCustomFood(draft.meals)
-      if (draft.meals.startsWith(`${t.mealBreakfast}:`) || draft.meals === t.mealBreakfast) {
-        setSelectedFood(t.mealBreakfast)
-      } else if (draft.meals.startsWith(`${t.mealLunch}:`) || draft.meals === t.mealLunch) {
-        setSelectedFood(t.mealLunch)
-      } else if (draft.meals.startsWith(`${t.mealSnack}:`) || draft.meals === t.mealSnack) {
-        setSelectedFood(t.mealSnack)
-      } else if (draft.meals.startsWith(`${t.mealAllMeals}:`) || draft.meals === t.mealAllMeals) {
-        setSelectedFood(t.mealAllMeals)
-      }
+      setShowCustomInput(true)
     }
-  }, [draft.meals, t])
+  }, [draft.meals, t, todaysMenu, lang])
 
-  function updateMealDraft(food: string, custom: string, intake: string) {
-    const activeFood = custom.trim() ? custom.trim() : food
-    const intakeLabels: Record<string, string> = {
-      'intake:very_well': t.mealIntakeVeryWell,
-      'intake:well': t.mealIntakeWell,
-      'intake:some': t.mealIntakeSome,
-      'intake:little': t.mealIntakeLittle,
-    }
-    const intakeLabel = intakeLabels[intake] || ''
-
-    if (activeFood && intakeLabel) {
-      setDraft((d) => ({ ...d, meals: `${activeFood} · ${intakeLabel}` }))
-    } else if (intake === 'intake:very_well' || intake === 'intake:well') {
-      setDraft((d) => ({ ...d, meals: 'meals:all' }))
-    } else if (intake === 'intake:some') {
-      setDraft((d) => ({ ...d, meals: 'meals:some' }))
-    } else if (intake === 'intake:little') {
-      setDraft((d) => ({ ...d, meals: 'meals:little' }))
-    } else if (activeFood) {
-      setDraft((d) => ({ ...d, meals: activeFood }))
+  function handleCourseSelect(course: 'breakfast' | 'lunch' | 'snack' | 'all') {
+    setSaved(false)
+    setActiveCourse(course)
+    if (selectedIntake) {
+      applyMealUpdate(course, customFood, selectedIntake)
     }
   }
 
-  function handleFoodSelect(foodName: string) {
+  function handleIntakeSelect(intakeKey: string) {
     setSaved(false)
-    const nextFood = selectedFood === foodName ? '' : foodName
-    setSelectedFood(nextFood)
-
-    let nextCustom = customFood
-    if (nextFood && todaysMenu) {
-      let menuDish = ''
-      if (nextFood === t.mealBreakfast) {
-        menuDish = localizeDish(todaysMenu.breakfast, lang)
-      } else if (nextFood === t.mealLunch) {
-        menuDish = localizeDish(todaysMenu.lunch, lang)
-      } else if (nextFood === t.mealSnack) {
-        menuDish = localizeDish(todaysMenu.morningSnack || todaysMenu.afternoonSnack, lang)
-      } else if (nextFood === t.mealAllMeals) {
-        const b = localizeDish(todaysMenu.breakfast, lang)
-        const l = localizeDish(todaysMenu.lunch, lang)
-        menuDish = [b, l].filter(Boolean).join(', ')
-      }
-
-      if (menuDish) {
-        nextCustom = `${nextFood}: ${menuDish}`
-        setCustomFood(nextCustom)
-      }
-    } else if (!nextFood) {
-      if (customFood.startsWith(`${foodName}:`)) {
-        nextCustom = ''
-        setCustomFood('')
-      }
+    const nextIntake = selectedIntake === intakeKey ? '' : intakeKey
+    setSelectedIntake(nextIntake)
+    if (!nextIntake) {
+      setDraft((d) => ({ ...d, meals: '' }))
+      return
     }
-
-    updateMealDraft(nextFood, nextCustom, selectedIntake)
+    applyMealUpdate(activeCourse, customFood, nextIntake)
   }
 
   function handleCustomFoodChange(text: string) {
     setSaved(false)
     setCustomFood(text)
-    updateMealDraft(selectedFood, text, selectedIntake)
+    if (selectedIntake) {
+      applyMealUpdate(activeCourse, text, selectedIntake)
+    }
   }
 
-  function handleIntakeSelect(intakeKey: string) {
+  function handleTagClick(tag: string) {
     setSaved(false)
-    setSelectedIntake(intakeKey)
-    updateMealDraft(selectedFood, customFood, intakeKey)
+    const next = customFood ? `${customFood}, ${tag}` : tag
+    setCustomFood(next)
+    if (selectedIntake) {
+      applyMealUpdate(activeCourse, next, selectedIntake)
+    }
+  }
+
+  function clearMeals() {
+    setSaved(false)
+    setCustomFood('')
+    setSelectedIntake('')
+    setShowCustomInput(false)
+    setDraft((d) => ({ ...d, meals: '' }))
   }
 
   function goToNextChild() {

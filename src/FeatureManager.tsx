@@ -7,8 +7,14 @@ import {
   getFeaturePermissions,
   updateFeaturePermission,
   resetFeaturePermissions,
+  listStaff,
+  listParents,
+  createStaff,
+  createParent,
+  resetUserPassword,
   type FeaturePermissionMap,
   type FeatureRole,
+  type User,
 } from './api'
 
 type FeatureCategory = 'daily' | 'community' | 'admin'
@@ -228,6 +234,25 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const [activeTab, setActiveTab] = useState<'modules' | 'accounts'>('modules')
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [createRole, setCreateRole] = useState<'teacher' | 'director' | 'parent'>('teacher')
+  const [createName, setCreateName] = useState('')
+  const [createEmail, setCreateEmail] = useState('')
+  const [createPassword, setCreatePassword] = useState('')
+  const [createBusy, setCreateBusy] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [createSuccess, setCreateSuccess] = useState<string | null>(null)
+
+  const [users, setUsers] = useState<User[]>([])
+  const [loadingUsers, setLoadingUsers] = useState(false)
+  const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'director' | 'teacher' | 'parent'>('all')
+  const [userSearch, setUserSearch] = useState('')
+  const [resetTarget, setResetTarget] = useState<User | null>(null)
+  const [newPasswordVal, setNewPasswordVal] = useState('')
+  const [resetBusy, setResetBusy] = useState(false)
+  const [resetError, setResetError] = useState<string | null>(null)
+
   useEffect(() => {
     alive.current = true
     return () => {
@@ -255,9 +280,101 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
     }
   }, [token])
 
+  const loadUsers = useCallback(async () => {
+    if (!token) return
+    setLoadingUsers(true)
+    try {
+      const [staffRes, parentsRes] = await Promise.all([
+        listStaff(token).catch(() => ({ staff: [] })),
+        listParents(token).catch(() => ({ parents: [] })),
+      ])
+      if (alive.current) {
+        setUsers([...staffRes.staff, ...parentsRes.parents])
+      }
+    } catch {
+      // ignore
+    } finally {
+      if (alive.current) {
+        setLoadingUsers(false)
+      }
+    }
+  }, [token])
+
   useEffect(() => {
     loadPermissions()
-  }, [loadPermissions])
+    loadUsers()
+  }, [loadPermissions, loadUsers])
+
+  const handleCreateAccount = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!token || createBusy) return
+    setCreateBusy(true)
+    setCreateError(null)
+    setCreateSuccess(null)
+    try {
+      if (createRole === 'parent') {
+        await createParent(token, {
+          name: createName.trim(),
+          email: createEmail.trim(),
+          password: createPassword,
+        })
+      } else {
+        await createStaff(token, {
+          name: createName.trim(),
+          email: createEmail.trim(),
+          password: createPassword,
+          role: createRole,
+        })
+      }
+      if (alive.current) {
+        setCreateSuccess(`${t.accountCreatedSuccess} (${createEmail.trim()})`)
+        setCreateName('')
+        setCreateEmail('')
+        setCreatePassword('')
+        loadUsers()
+        setTimeout(() => {
+          if (alive.current) {
+            setShowCreateModal(false)
+            setCreateSuccess(null)
+          }
+        }, 1500)
+      }
+    } catch (err: any) {
+      if (alive.current) {
+        setCreateError(err.message || 'Failed to create account. Check email uniqueness.')
+      }
+    } finally {
+      if (alive.current) {
+        setCreateBusy(false)
+      }
+    }
+  }
+
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!token || !resetTarget || resetBusy) return
+    setResetBusy(true)
+    setResetError(null)
+    try {
+      await resetUserPassword(token, resetTarget.id, newPasswordVal)
+      if (alive.current) {
+        setMessage(t.staffResetSuccess)
+        setResetTarget(null)
+        setNewPasswordVal('')
+        setTimeout(() => {
+          if (alive.current) setMessage(null)
+        }, 4000)
+      }
+    } catch (err: any) {
+      if (alive.current) {
+        setResetError(err.message || 'Failed to reset password')
+      }
+    } finally {
+      if (alive.current) {
+        setResetBusy(false)
+      }
+    }
+  }
 
   const handleToggle = async (role: FeatureRole, featureKey: string, newEnabled: boolean) => {
     if (!token || updatingKey) return
@@ -345,32 +462,79 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
 
   const currentRoleMap = permissions[selectedRole] || {}
 
+  const filteredUsers = users.filter((u) => {
+    if (userRoleFilter !== 'all' && u.role !== userRoleFilter) return false
+    if (userSearch.trim()) {
+      const q = userSearch.toLowerCase()
+      return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
+    }
+    return true
+  })
+
   return (
     <div className="panel feature-manager-panel">
       <header className="panel-header">
         <div>
-          <h1 tabIndex={-1}>{t.featureManagerTitle}</h1>
-          <p className="panel-sub">{t.featureManagerSubtitle}</p>
+          <h1 tabIndex={-1}>{activeTab === 'modules' ? t.featureManagerTitle : t.usersDirectoryTitle}</h1>
+          <p className="panel-sub">{activeTab === 'modules' ? t.featureManagerSubtitle : t.staffDirectoryTitle}</p>
         </div>
-        <div className="panel-actions">
-          <button
-            type="button"
-            className="btn secondary"
-            onClick={handleResetDefaults}
-            disabled={loading}
-          >
-            {t.resetDefaultsBtn}
-          </button>
+        <div className="panel-actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button
             type="button"
             className="btn primary"
-            onClick={() => handleEnableAllForRole(selectedRole)}
-            disabled={loading}
+            onClick={() => {
+              setCreateError(null)
+              setCreateSuccess(null)
+              setShowCreateModal(true)
+            }}
           >
-            {t.enableAllBtn}
+            + {t.createAccountBtn}
           </button>
+          {activeTab === 'modules' && (
+            <>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={handleResetDefaults}
+                disabled={loading}
+              >
+                {t.resetDefaultsBtn}
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => handleEnableAllForRole(selectedRole)}
+                disabled={loading}
+              >
+                {t.enableAllBtn}
+              </button>
+            </>
+          )}
         </div>
       </header>
+
+      {/* Primary Tab Navigation */}
+      <div style={{ display: 'flex', gap: '8px', margin: '14px 0 20px', borderBottom: '1px solid var(--kd-line)' }}>
+        <button
+          type="button"
+          className={`tab-btn ${activeTab === 'modules' ? 'active' : ''}`}
+          onClick={() => setActiveTab('modules')}
+          style={{ padding: '8px 16px', borderRadius: '6px 6px 0 0', cursor: 'pointer' }}
+        >
+          {t.tabModules}
+        </button>
+        <button
+          type="button"
+          className={`tab-btn ${activeTab === 'accounts' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('accounts')
+            loadUsers()
+          }}
+          style={{ padding: '8px 16px', borderRadius: '6px 6px 0 0', cursor: 'pointer' }}
+        >
+          {t.tabAccounts} {users.length > 0 ? `(${users.length})` : ''}
+        </button>
+      </div>
 
       {error && (
         <div role="alert" className="form-error" style={{ marginBottom: '1rem' }}>
@@ -383,7 +547,87 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
         </div>
       )}
 
-      {/* Module Overview Statistics */}
+      {activeTab === 'accounts' ? (
+        <section className="accounts-management-section">
+          <div className="filters" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className={`filter-btn ${userRoleFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setUserRoleFilter('all')}
+              >
+                {t.filterAllRoles}
+              </button>
+              <button
+                type="button"
+                className={`filter-btn ${userRoleFilter === 'director' ? 'active' : ''}`}
+                onClick={() => setUserRoleFilter('director')}
+              >
+                {t.roleDirector}
+              </button>
+              <button
+                type="button"
+                className={`filter-btn ${userRoleFilter === 'teacher' ? 'active' : ''}`}
+                onClick={() => setUserRoleFilter('teacher')}
+              >
+                {t.roleTeacher}
+              </button>
+              <button
+                type="button"
+                className={`filter-btn ${userRoleFilter === 'parent' ? 'active' : ''}`}
+                onClick={() => setUserRoleFilter('parent')}
+              >
+                {t.roleParent}
+              </button>
+            </div>
+            <input
+              type="search"
+              aria-label={t.searchPages}
+              placeholder={`${t.searchPages}...`}
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              style={{ maxWidth: '280px', width: '100%', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          {loadingUsers ? (
+            <div className="loading-spinner" aria-busy="true">{t.attendanceSaving}...</div>
+          ) : filteredUsers.length === 0 ? (
+            <p className="empty-notice">{t.noUsersFound}</p>
+          ) : (
+            <div className="shifts-grid" style={{ marginTop: '12px' }}>
+              {filteredUsers.map((u) => (
+                <article key={u.id} className="card shift-card" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '16px' }}>{u.name}</h3>
+                      <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--kd-muted)' }}>{u.email}</p>
+                    </div>
+                    <span className={`badge role-badge ${u.role}`} style={{ textTransform: 'capitalize' }}>
+                      {u.role === 'director' ? t.roleDirector : u.role === 'teacher' ? t.roleTeacher : u.role === 'superadmin' ? t.roleSuperAdmin : t.roleParent}
+                    </span>
+                  </div>
+                  <div style={{ marginTop: 'auto', paddingTop: '8px', borderTop: '1px solid var(--kd-line)' }}>
+                    <button
+                      type="button"
+                      className="btn ghost small-btn"
+                      onClick={() => {
+                        setResetTarget(u)
+                        setNewPasswordVal('')
+                        setResetError(null)
+                      }}
+                    >
+                      🔑 {t.changePasswordBtn}
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : (
+        <>
+          {/* Module Overview Statistics */}
       <section className="features-stat-grid" aria-label="Feature Module Statistics">
         <article className="stat-card">
           <span className="stat-label">{t.statTotalFeatures}</span>
@@ -557,6 +801,121 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
           })
         )}
       </div>
+        </>
+      )}
+
+      {/* Create Account Modal */}
+      {showCreateModal && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setShowCreateModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px', width: '100%', boxSizing: 'border-box' }}>
+            <div className="modal-header">
+              <h2>{t.createAccountModalTitle}</h2>
+              <button type="button" className="btn-close" aria-label={t.cancel} onClick={() => setShowCreateModal(false)}>✕</button>
+            </div>
+            {createError && <div className="notice error-banner" role="alert" style={{ margin: '12px 0' }}>{createError}</div>}
+            {createSuccess && <div className="notice success-banner" role="status" style={{ margin: '12px 0' }}>✓ {createSuccess}</div>}
+            <form onSubmit={handleCreateAccount} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
+              <div className="form-field">
+                <label htmlFor="modal-create-role"><strong>{t.accountRoleLabel}</strong></label>
+                <select
+                  id="modal-create-role"
+                  value={createRole}
+                  onChange={(e) => setCreateRole(e.target.value as 'teacher' | 'director' | 'parent')}
+                  style={{ width: '100%', boxSizing: 'border-box' }}
+                >
+                  <option value="teacher">{t.roleTeacher} (Edukator)</option>
+                  <option value="director">{t.roleDirector} (Drejtor)</option>
+                  <option value="parent">{t.roleParent} (Prind)</option>
+                </select>
+              </div>
+              <div className="form-field">
+                <label htmlFor="modal-create-name"><strong>{t.staffMemberName}</strong></label>
+                <input
+                  id="modal-create-name"
+                  type="text"
+                  required
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  placeholder="e.g. Valbona Krasniqi"
+                  style={{ width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="modal-create-email"><strong>{t.staffMemberEmail}</strong></label>
+                <input
+                  id="modal-create-email"
+                  type="email"
+                  required
+                  value={createEmail}
+                  onChange={(e) => setCreateEmail(e.target.value)}
+                  placeholder="user@kidoland.al"
+                  style={{ width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="modal-create-pwd"><strong>{t.staffMemberPassword}</strong></label>
+                <input
+                  id="modal-create-pwd"
+                  type="password"
+                  required
+                  minLength={createRole === 'parent' ? 10 : 6}
+                  value={createPassword}
+                  onChange={(e) => setCreatePassword(e.target.value)}
+                  placeholder={createRole === 'parent' ? 'Min 10 characters' : 'Min 6 characters'}
+                  style={{ width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div className="modal-actions" style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+                <button type="submit" className="btn primary" disabled={createBusy}>
+                  {createBusy ? t.attendanceSaving : t.staffCreateSubmit}
+                </button>
+                <button type="button" className="btn ghost" onClick={() => setShowCreateModal(false)}>
+                  {t.cancel}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Password Reset Modal */}
+      {resetTarget && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setResetTarget(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px', width: '100%', boxSizing: 'border-box' }}>
+            <div className="modal-header">
+              <h2>{t.staffResetModalTitle}</h2>
+              <button type="button" className="btn-close" aria-label={t.cancel} onClick={() => setResetTarget(null)}>✕</button>
+            </div>
+            <p style={{ margin: '8px 0 16px', color: 'var(--kd-muted)' }}>
+              {resetTarget.name} ({resetTarget.email})
+            </p>
+            {resetError && <div className="notice error-banner" role="alert" style={{ marginBottom: '12px' }}>{resetError}</div>}
+            <form onSubmit={handleResetPasswordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="form-field">
+                <label htmlFor="modal-reset-new-pwd"><strong>{t.newPassword}</strong></label>
+                <input
+                  id="modal-reset-new-pwd"
+                  type="password"
+                  required
+                  minLength={6}
+                  value={newPasswordVal}
+                  onChange={(e) => setNewPasswordVal(e.target.value)}
+                  placeholder="Min 6 characters"
+                  style={{ width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div className="modal-actions" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                <button type="submit" className="btn primary" disabled={resetBusy}>
+                  {resetBusy ? t.attendanceSaving : t.changePasswordBtn}
+                </button>
+                <button type="button" className="btn ghost" onClick={() => setResetTarget(null)}>
+                  {t.cancel}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

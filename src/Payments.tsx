@@ -67,7 +67,7 @@ export default function Payments() {
   const [receiptLoading, setReceiptLoading] = useState(false)
 
   const canCreate = user?.role !== 'parent'
-  const canPaid = user?.role === 'director'
+  const canPaid = user?.role === 'director' || user?.role === 'superadmin'
 
   function cents(value: string) {
     if (!/^\d+(\.\d{1,2})?$/.test(value)) return NaN

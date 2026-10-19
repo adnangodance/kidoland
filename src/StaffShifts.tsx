@@ -7,6 +7,8 @@ import {
   createStaffShift,
   updateShiftStatus,
   deleteStaffShift,
+  createStaff,
+  resetUserPassword,
   type StaffShift,
   type RoomRatioStat,
   type StaffMember,
@@ -41,8 +43,24 @@ export function StaffShifts() {
     notes: '',
   }))
 
-  const isDirector = user?.role === 'director'
+  const isDirector = user?.role === 'director' || user?.role === 'superadmin'
   const isStaff = user?.role === 'teacher' || isDirector
+
+  // Staff creation & password reset
+  const [showAddStaff, setShowAddStaff] = useState(false)
+  const [staffName, setStaffName] = useState('')
+  const [staffEmail, setStaffEmail] = useState('')
+  const [staffPassword, setStaffPassword] = useState('')
+  const [staffRole, setStaffRole] = useState<'teacher' | 'director'>('teacher')
+  const [staffBusy, setStaffBusy] = useState(false)
+  const [staffError, setStaffError] = useState('')
+  const [staffSuccess, setStaffSuccess] = useState('')
+
+  const [resetTarget, setResetTarget] = useState<StaffMember | null>(null)
+  const [newPasswordVal, setNewPasswordVal] = useState('')
+  const [resetBusy, setResetBusy] = useState(false)
+  const [resetError, setResetError] = useState('')
+
   const alive = useRef(true)
 
   useEffect(() => {
@@ -179,6 +197,55 @@ export function StaffShifts() {
     }
   }
 
+  async function handleAddStaff(e: FormEvent) {
+    e.preventDefault()
+    if (!token || staffBusy) return
+    setStaffBusy(true)
+    setStaffError('')
+    setStaffSuccess('')
+    try {
+      await createStaff(token, {
+        name: staffName.trim(),
+        email: staffEmail.trim(),
+        password: staffPassword,
+        role: staffRole,
+      })
+      setStaffSuccess(t.staffCreateSuccess)
+      setStaffName('')
+      setStaffEmail('')
+      setStaffPassword('')
+      setShowAddStaff(false)
+      const ref = await listStaffShifts(token, date)
+      if (alive.current) {
+        setStaffMembers(ref.staffMembers)
+      }
+      setTimeout(() => setStaffSuccess(''), 4000)
+    } catch {
+      setStaffError('Could not create staff account. Check email uniqueness.')
+    } finally {
+      setStaffBusy(false)
+    }
+  }
+
+  async function handleResetPassword(e: FormEvent) {
+    e.preventDefault()
+    if (!token || !resetTarget || resetBusy) return
+    setResetBusy(true)
+    setResetError('')
+    try {
+      await resetUserPassword(token, resetTarget.id, newPasswordVal)
+      setFeedback(t.staffResetSuccess)
+      setResetTarget(null)
+      setNewPasswordVal('')
+      setTimeout(() => setFeedback(''), 4000)
+    } catch {
+      setResetError('Could not reset password.')
+    } finally {
+      setResetBusy(false)
+    }
+  }
+
+
   return (
     <section className="panel staff-shifts-panel" aria-busy={loading}>
       <div className="panel-header">
@@ -188,20 +255,97 @@ export function StaffShifts() {
             {isStaff ? t.staffShiftsSubtitle : t.staffParentSubtitle}
           </p>
         </div>
-        {isStaff && (
-          <button
-            type="button"
-            className="btn primary"
-            onClick={() => setShowForm((v) => !v)}
-            aria-expanded={showForm}
-          >
-            {t.scheduleShiftBtn}
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {isDirector && (
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => setShowAddStaff((v) => !v)}
+              aria-expanded={showAddStaff}
+            >
+              + {t.addStaffMember}
+            </button>
+          )}
+          {isStaff && (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => setShowForm((v) => !v)}
+              aria-expanded={showForm}
+            >
+              {t.scheduleShiftBtn}
+            </button>
+          )}
+        </div>
       </div>
 
       {feedback && <div className="notice success-banner" role="status">✓ {feedback}</div>}
       {error && <div className="notice error-banner" role="alert">{error}</div>}
+      {staffSuccess && <div className="notice success-banner" role="status">✓ {staffSuccess}</div>}
+      {staffError && <div className="notice error-banner" role="alert">{staffError}</div>}
+
+      {showAddStaff && isDirector && (
+        <form className="card form-card" onSubmit={handleAddStaff} style={{ marginBottom: '20px' }}>
+          <h3>+ {t.addStaffMember}</h3>
+          <div className="form-grid">
+            <div className="form-field">
+              <label htmlFor="staff-name">{t.staffMemberName}</label>
+              <input
+                id="staff-name"
+                type="text"
+                required
+                value={staffName}
+                onChange={(e) => setStaffName(e.target.value)}
+                placeholder="e.g. Valbona Krasniqi"
+              />
+            </div>
+            <div className="form-field">
+              <label htmlFor="staff-email">{t.staffMemberEmail}</label>
+              <input
+                id="staff-email"
+                type="email"
+                required
+                value={staffEmail}
+                onChange={(e) => setStaffEmail(e.target.value)}
+                placeholder="teacher@kidoland.al"
+              />
+            </div>
+            <div className="form-field">
+              <label htmlFor="staff-pwd">{t.staffMemberPassword}</label>
+              <input
+                id="staff-pwd"
+                type="password"
+                required
+                minLength={6}
+                value={staffPassword}
+                onChange={(e) => setStaffPassword(e.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
+            {user?.role === 'superadmin' && (
+              <div className="form-field">
+                <label htmlFor="staff-role">{t.staffMemberRole}</label>
+                <select
+                  id="staff-role"
+                  value={staffRole}
+                  onChange={(e) => setStaffRole(e.target.value as 'teacher' | 'director')}
+                >
+                  <option value="teacher">{t.roleTeacher}</option>
+                  <option value="director">{t.roleDirector}</option>
+                </select>
+              </div>
+            )}
+          </div>
+          <div className="form-actions" style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+            <button type="submit" className="btn primary" disabled={staffBusy}>
+              {staffBusy ? t.attendanceSaving : t.staffCreateSubmit}
+            </button>
+            <button type="button" className="btn ghost" onClick={() => setShowAddStaff(false)}>
+              {t.cancel}
+            </button>
+          </div>
+        </form>
+      )}
 
       {/* Date Switcher */}
       <div className="filters">
@@ -467,6 +611,68 @@ export function StaffShifts() {
           ))}
         </div>
       </section>
+
+      {/* Staff Directory & Password Reset (Directors / SuperAdmin only) */}
+      {isDirector && staffMembers.length > 0 && (
+        <section className="staff-directory-section" style={{ marginTop: '30px' }}>
+          <h2>{t.staffDirectoryTitle}</h2>
+          <div className="shifts-grid" style={{ marginTop: '12px' }}>
+            {staffMembers.map((m) => (
+              <article key={m.id} className="card shift-card" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 className="staff-name" style={{ margin: 0 }}>{m.name}</h3>
+                  <span className="badge role-badge">{m.role}</span>
+                </div>
+                <div style={{ marginTop: 'auto', paddingTop: '8px' }}>
+                  <button
+                    type="button"
+                    className="btn ghost small-btn"
+                    onClick={() => {
+                      setResetTarget(m)
+                      setNewPasswordVal('')
+                      setResetError('')
+                    }}
+                  >
+                    🔑 {t.staffResetPassword}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Password Reset Modal */}
+      {resetTarget && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card" style={{ maxWidth: '400px', width: '90%', margin: 'auto' }}>
+            <h3>{t.staffResetModalTitle}: {resetTarget.name}</h3>
+            {resetError && <div className="notice error-banner">{resetError}</div>}
+            <form onSubmit={handleResetPassword}>
+              <label>
+                {t.newPassword}
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={newPasswordVal}
+                  onChange={(e) => setNewPasswordVal(e.target.value)}
+                  placeholder="Min 6 characters"
+                />
+              </label>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+                <button type="submit" className="btn primary" disabled={resetBusy}>
+                  {resetBusy ? t.attendanceSaving : t.staffResetPassword}
+                </button>
+                <button type="button" className="btn ghost" onClick={() => setResetTarget(null)}>
+                  {t.cancel}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
+
