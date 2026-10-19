@@ -20,6 +20,22 @@ export default function Attendance({ initialDate }: { initialDate?: string }) {
   const [date, setDate] = useState(() => initialDate || localCalendarDate())
   const [retry, setRetry] = useState(0)
   const [search, setSearch] = useState('')
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => {
+    try {
+      return localStorage.getItem('kidoland.attendance.view') === 'grid' ? 'grid' : 'list'
+    } catch {
+      return 'list'
+    }
+  })
+
+  function changeViewMode(mode: 'list' | 'grid') {
+    setViewMode(mode)
+    try {
+      localStorage.setItem('kidoland.attendance.view', mode)
+    } catch {
+      // ignore storage errors
+    }
+  }
   const context = JSON.stringify([token, user?.id, date])
   const [requests] = useState(createAttendanceRequests)
   useLayoutEffect(() => { requests.invalidate() }, [context, requests])
@@ -114,18 +130,45 @@ export default function Attendance({ initialDate }: { initialDate?: string }) {
       {ready && currentRoster.children.length === 0 && <p>{t.attendanceEmpty}</p>}
       {ready && currentRoster.children.length > 0 && <>
         <div className="attendance-summary" aria-label={t.attendanceOverview}>{(['present', 'absent', 'unmarked'] as const).map((status) => <span key={status}>{statusLabel(status === 'unmarked' ? undefined : status)}<strong>{counts[status]}</strong></span>)}</div>
-        <div className="roster-toolbar"><label className="search-field"><Icon name="search" /><input type="search" aria-label={t.searchChildren} placeholder={t.searchChildren} value={search} onChange={(event) => setSearch(event.target.value)} /></label><span>{matchingChildren.length} / {currentRoster.children.length} · {t.dashChildren}</span></div>
+        <div className="roster-toolbar">
+          <label className="search-field"><Icon name="search" /><input type="search" aria-label={t.searchChildren} placeholder={t.searchChildren} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+          <span className="roster-count">{matchingChildren.length} / {currentRoster.children.length} · {t.dashChildren}</span>
+          <div className="attendance-view-toggle" role="group" aria-label={t.attendanceViewMode}>
+            <button
+              type="button"
+              className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
+              aria-pressed={viewMode === 'list'}
+              onClick={() => changeViewMode('list')}
+              title={t.attendanceViewList}
+              aria-label={t.attendanceViewList}
+            >
+              <Icon name="list" size={16} />
+              <span>{t.attendanceViewList}</span>
+            </button>
+            <button
+              type="button"
+              className={`view-toggle-btn ${viewMode === 'grid' ? 'active' : ''}`}
+              aria-pressed={viewMode === 'grid'}
+              onClick={() => changeViewMode('grid')}
+              title={t.attendanceViewGrid}
+              aria-label={t.attendanceViewGrid}
+            >
+              <Icon name="grid" size={16} />
+              <span>{t.attendanceViewGrid}</span>
+            </button>
+          </div>
+        </div>
         {matchingChildren.length === 0 && <div className="empty-hint"><p>{t.noSearchResults}</p><button className="btn ghost" onClick={() => setSearch('')}>{t.clearSearch}</button></div>}
       </>}
-      {ready && <ul className="attendance-roster">
+      {ready && <ul className={`attendance-roster ${viewMode === 'grid' ? 'is-grid' : 'is-list'}`}>
         {matchingChildren.map((child) => {
           const status = entries.get(child.id)?.status
-          return <li key={child.id} className={`attendance-row ${isSeaGodanci(child.name) ? 'sea-godanci-row' : ''}`}>
-            <div className="attendance-identity"><ChildAvatar name={child.name} size={40} /><div><h2>{child.name} <SeaGodanciBadge name={child.name} /></h2><p>{t.attendanceGroup}: {child.groupName}</p></div>{child.allergies && <span className="allergy-badge">⚠️ {child.allergies}</span>}</div>
+          return <li key={child.id} className={`attendance-row ${viewMode === 'grid' ? 'attendance-grid-card' : ''} ${isSeaGodanci(child.name) ? 'sea-godanci-row' : ''}`}>
+            <div className="attendance-identity"><ChildAvatar name={child.name} size={viewMode === 'grid' ? 52 : 40} /><div><h2>{child.name} <SeaGodanciBadge name={child.name} /></h2><p>{t.attendanceGroup}: {child.groupName}</p></div>{child.allergies && <span className="allergy-badge">⚠️ {child.allergies}</span>}</div>
             <p className={`attendance-status ${status ?? 'unmarked'}`}>{statusLabel(status)}</p>
             {canMark && <div className="attendance-controls">
               {(['present', 'absent'] as const).map((choice) => <button key={choice} type="button"
-                className="btn ghost" aria-pressed={status === choice} aria-label={`${statusLabel(choice)} · ${child.name}`}
+                className={`btn ghost attendance-radio-btn attendance-${choice}`} aria-pressed={status === choice} aria-label={`${statusLabel(choice)} · ${child.name}`}
                 disabled={pending !== null} onClick={() => void mark({ childId: child.id, status: choice })}>{statusLabel(choice)}</button>)}
             </div>}
             <div className="attendance-feedback" role="status">
