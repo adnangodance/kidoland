@@ -87,7 +87,7 @@ export function DailyTimeline({ initialChildId, initialDate }: { initialChildId?
   })
 
   return (
-    <section className="panel timeline-panel" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
+    <section className={`panel ${data ? 'timeline-panel' : 'timeline-loading'}`} style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
       <header className="panel-header">
         <div>
           <h1>{t.timelineTitle}</h1>
@@ -215,9 +215,8 @@ export function DailyTimeline({ initialChildId, initialDate }: { initialChildId?
         className="filter-chips"
         style={{
           display: 'flex',
+          flexWrap: 'wrap',
           gap: '0.5rem',
-          overflowX: 'auto',
-          paddingBottom: '0.5rem',
           marginBottom: '1.25rem',
         }}
         role="tablist"

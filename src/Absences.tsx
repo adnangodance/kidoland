@@ -88,7 +88,8 @@ export default function Absences() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!token || saving) return
-    if (!draft.childId || !validDate(draft.startDate) || !validDate(draft.endDate)) {
+    const activeChildId = draft.childId || children[0]?.id || ''
+    if (!activeChildId || !validDate(draft.startDate) || !validDate(draft.endDate)) {
       setSaveError(t.attendanceInvalidDate)
       return
     }
@@ -102,7 +103,7 @@ export default function Absences() {
     setFeedback('')
 
     try {
-      const res = await createAbsenceNotice(token, draft)
+      const res = await createAbsenceNotice(token, { ...draft, childId: activeChildId })
       if (alive.current) {
         setNotices((prev) => [res.notice, ...prev.filter((n) => n.id !== res.notice.id)])
         setShowForm(false)

@@ -40,8 +40,103 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [batchSaved, setBatchSaved] = useState(false)
+  const [selectedFood, setSelectedFood] = useState('')
+  const [customFood, setCustomFood] = useState('')
+  const [selectedIntake, setSelectedIntake] = useState('')
   const canWrite = user?.role !== 'parent'
   const selectedChild = children.find((c) => c.id === childId)
+  const currentIndex = children.findIndex((c) => c.id === childId)
+
+  useEffect(() => {
+    if (!draft.meals) {
+      setSelectedFood('')
+      setCustomFood('')
+      setSelectedIntake('')
+      return
+    }
+    if (draft.meals === 'meals:all') {
+      setSelectedIntake('intake:well')
+      return
+    }
+    if (draft.meals === 'meals:some') {
+      setSelectedIntake('intake:some')
+      return
+    }
+    if (draft.meals === 'meals:little') {
+      setSelectedIntake('intake:little')
+      return
+    }
+    if (draft.meals.includes(' · ')) {
+      const parts = draft.meals.split(' · ')
+      setSelectedFood(parts[0] || '')
+      const intakePart = parts[1] || ''
+      if (intakePart.includes(t.mealIntakeVeryWell) || intakePart.includes('Shumë') || intakePart.includes('Very')) {
+        setSelectedIntake('intake:very_well')
+      } else if (intakePart.includes(t.mealIntakeWell) || intakePart.includes('Mirë') || intakePart.includes('Well')) {
+        setSelectedIntake('intake:well')
+      } else if (intakePart.includes(t.mealIntakeSome) || intakePart.includes('Pak') || intakePart.includes('Some')) {
+        setSelectedIntake('intake:some')
+      } else if (intakePart.includes(t.mealIntakeLittle) || intakePart.includes('pak') || intakePart.includes('Little')) {
+        setSelectedIntake('intake:little')
+      }
+    } else {
+      setCustomFood(draft.meals)
+    }
+  }, [draft.meals, t])
+
+  function updateMealDraft(food: string, custom: string, intake: string) {
+    const activeFood = custom.trim() ? custom.trim() : food
+    const intakeLabels: Record<string, string> = {
+      'intake:very_well': t.mealIntakeVeryWell,
+      'intake:well': t.mealIntakeWell,
+      'intake:some': t.mealIntakeSome,
+      'intake:little': t.mealIntakeLittle,
+    }
+    const intakeLabel = intakeLabels[intake] || ''
+
+    if (activeFood && intakeLabel) {
+      setDraft((d) => ({ ...d, meals: `${activeFood} · ${intakeLabel}` }))
+    } else if (intake === 'intake:very_well' || intake === 'intake:well') {
+      setDraft((d) => ({ ...d, meals: 'meals:all' }))
+    } else if (intake === 'intake:some') {
+      setDraft((d) => ({ ...d, meals: 'meals:some' }))
+    } else if (intake === 'intake:little') {
+      setDraft((d) => ({ ...d, meals: 'meals:little' }))
+    } else if (activeFood) {
+      setDraft((d) => ({ ...d, meals: activeFood }))
+    }
+  }
+
+  function handleFoodSelect(foodName: string) {
+    setSaved(false)
+    const nextFood = selectedFood === foodName ? '' : foodName
+    setSelectedFood(nextFood)
+    updateMealDraft(nextFood, customFood, selectedIntake)
+  }
+
+  function handleCustomFoodChange(text: string) {
+    setSaved(false)
+    setCustomFood(text)
+    updateMealDraft(selectedFood, text, selectedIntake)
+  }
+
+  function handleIntakeSelect(intakeKey: string) {
+    setSaved(false)
+    setSelectedIntake(intakeKey)
+    updateMealDraft(selectedFood, customFood, intakeKey)
+  }
+
+  function goToNextChild() {
+    if (currentIndex >= 0 && currentIndex < children.length - 1) {
+      changeContext(children[currentIndex + 1].id, date)
+    }
+  }
+
+  function goToPreviousChild() {
+    if (currentIndex > 0) {
+      changeContext(children[currentIndex - 1].id, date)
+    }
+  }
   useEffect(() => {
     let cancelled = false
     setRosterReady(false); setRosterError(false)
@@ -145,6 +240,27 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
   return <section className="panel reports-panel"><h1>{t.reportsTitle}</h1><p className="panel-sub">{t.reportsDescription}</p>
     <div className="filters"><label>{t.paymentsChild}<select disabled={busy || !rosterReady} value={childId} onChange={(e) => changeContext(e.target.value, date)}>{children.map((c) => <option key={c.id} value={c.id}>{isSeaGodanci(c.name) ? '⭐ ' : ''}{c.name} · {c.groupName}</option>)}</select></label>
     <label>{t.attendanceDate}<input type="date" disabled={busy} value={date} onChange={(e) => changeContext(childId, e.target.value)} /></label><button className="btn ghost" disabled={busy} onClick={() => { if (date !== localCalendarDate()) changeContext(childId, localCalendarDate()) }}>{t.attendanceToday}</button></div>
+    {rosterReady && children.length > 1 && (
+      <div className="child-carousel-wrap">
+        <div className="child-carousel-bar">
+          <div className="current-child-indicator">
+            <ChildAvatar name={selectedChild?.name || ''} size={28} />
+            <div className="child-indicator-meta">
+              <strong>{selectedChild?.name} {isSeaGodanci(selectedChild?.name || '') ? '⭐' : ''}</strong>
+              <small>{selectedChild?.groupName} · #{currentIndex + 1} / {children.length}</small>
+            </div>
+          </div>
+          <div className="carousel-nav-btns">
+            <button type="button" className="btn ghost small-btn" disabled={busy || currentIndex <= 0} onClick={goToPreviousChild} aria-label={t.prevChild}>
+              ← {t.prevChild}
+            </button>
+            <button type="button" className="btn ghost small-btn" disabled={busy || currentIndex >= children.length - 1} onClick={goToNextChild} aria-label={t.nextChild}>
+              {t.nextChild} →
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     {selectedChild?.allergies && <div className="allergy-alert" role="status">⚠️ <strong>{t.allergies}:</strong> {selectedChild.allergies}</div>}
     {!validDate(date) && <p role="alert">{t.attendanceInvalidDate}</p>}
     {loading && <p role="status">{t.loading}</p>}
@@ -156,11 +272,185 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
       <h2 className="form-section-title">{t.reportDetails}</h2>
       {reports.length > 0 && <p>{t.reportCorrection}</p>}
       <fieldset disabled={busy}>
-        <div className="editor-section"><h3><span>01</span>{t.reportBasics}</h3><div className="report-basics">{(['mood', 'meals', 'nap'] as const).map((field) => <label key={field}>{t[({ mood: 'reportsMood', meals: 'reportsMeals', nap: 'reportsNap' } as const)[field]]}<select required value={draft[field]} onChange={(e) => { setSaved(false); setDraft({ ...draft, [field]: e.target.value }) }}><option value="">{t.choose}</option>{draft[field] && !options[field].some(([code]) => code === draft[field]) && <option value={draft[field]}>{translated(draft[field])}</option>}{options[field].map(([code, key]) => <option key={code} value={code}>{t[key]}</option>)}</select></label>)}</div></div>
+        <div className="editor-section">
+          <h3><span>01</span>{t.reportBasics}</h3>
+          
+          <div className="report-basics">
+            {(['mood', 'meals', 'nap'] as const).map((field) => (
+              <label key={field}>
+                {t[({ mood: 'reportsMood', meals: 'reportsMeals', nap: 'reportsNap' } as const)[field]]}
+                <select required value={draft[field]} onChange={(e) => { setSaved(false); setDraft({ ...draft, [field]: e.target.value }) }}>
+                  <option key="" value="">{t.choose}</option>
+                  {draft[field] && !options[field].some(([code]) => code === draft[field]) && <option key="__custom__" value={draft[field]}>{translated(draft[field])}</option>}
+                  {options[field].map(([code, key]) => <option key={code} value={code}>{t[key]}</option>)}
+                </select>
+              </label>
+            ))}
+          </div>
+
+          <div className="quick-mood-wrap">
+            <span className="quick-field-label">😊 {t.reportsMood}:</span>
+            <div className="mood-quick-pills" role="group" aria-label={t.reportsMood}>
+              {options.mood.map(([code, key]) => {
+                const isSelected = draft.mood === code
+                const emojis: Record<string, string> = { 'mood:happy': '😊', 'mood:calm': '😌', 'mood:tired': '🥱', 'mood:upset': '😢' }
+                return (
+                  <button
+                    key={code}
+                    type="button"
+                    className={`choice-pill mood-pill ${isSelected ? 'active' : ''}`}
+                    aria-pressed={isSelected}
+                    onClick={() => { setSaved(false); setDraft({ ...draft, mood: code }) }}
+                  >
+                    <span className="choice-emoji">{emojis[code]}</span>
+                    <span>{t[key]}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 2-Step Meal Composer */}
+          <div className="meal-composer-card">
+            <div className="meal-composer-title">
+              <span className="meal-card-icon">🍎</span>
+              <div>
+                <strong>{t.reportsMeals}</strong>
+                <p>{lang === 'sq' ? 'Zgjidhni fillimisht çfarë hëngri fëmija, pastaj vlerësoni oreksin' : 'First select what was eaten, then evaluate appetite'}</p>
+              </div>
+            </div>
+
+            {/* Step 1: What did they eat? */}
+            <div className="meal-step-box">
+              <div className="meal-step-header">
+                <span className="step-badge">1</span>
+                <span>{t.mealStep1Food}</span>
+              </div>
+              <div className="meal-food-chips">
+                {[
+                  { label: t.mealBreakfast, icon: '🥣' },
+                  { label: t.mealLunch, icon: '🍲' },
+                  { label: t.mealSnack, icon: '🍎' },
+                  { label: t.mealAllMeals, icon: '🥣🍲🍎' },
+                  { label: t.mealDishSoup, icon: '🥗' },
+                  { label: t.mealDishMain, icon: '🍝' },
+                  { label: t.mealDishBread, icon: '🥪' },
+                  { label: t.mealDishFruit, icon: '🍌' },
+                ].map((item) => {
+                  const isSelected = selectedFood === item.label
+                  return (
+                    <button
+                      key={item.label}
+                      type="button"
+                      className={`meal-chip ${isSelected ? 'active' : ''}`}
+                      aria-pressed={isSelected}
+                      onClick={() => handleFoodSelect(item.label)}
+                    >
+                      <span className="chip-icon">{item.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="meal-custom-wrap">
+                <input
+                  type="text"
+                  className="meal-custom-input"
+                  placeholder={t.mealCustomFoodPlaceholder}
+                  value={customFood}
+                  onChange={(e) => handleCustomFoodChange(e.target.value)}
+                  aria-label={t.presetMealsCustom}
+                />
+              </div>
+            </div>
+
+            {/* Step 2: How well did they eat? */}
+            <div className="meal-step-box" style={{ marginTop: '12px' }}>
+              <div className="meal-step-header">
+                <span className="step-badge">2</span>
+                <span>{t.mealStep2Intake}</span>
+              </div>
+              <div className="meal-intake-chips">
+                {[
+                  { key: 'intake:very_well', label: t.mealIntakeVeryWell, icon: '🌟', tone: 'great' },
+                  { key: 'intake:well', label: t.mealIntakeWell, icon: '👍', tone: 'good' },
+                  { key: 'intake:some', label: t.mealIntakeSome, icon: '🤏', tone: 'moderate' },
+                  { key: 'intake:little', label: t.mealIntakeLittle, icon: '⚠️', tone: 'little' },
+                ].map((item) => {
+                  const isSelected = selectedIntake === item.key
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      className={`intake-btn ${item.tone} ${isSelected ? 'active' : ''}`}
+                      aria-pressed={isSelected}
+                      onClick={() => handleIntakeSelect(item.key)}
+                    >
+                      <span className="intake-radio-dot" aria-hidden="true" />
+                      <span className="intake-icon">{item.icon}</span>
+                      <span className="intake-label">{item.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {draft.meals && (
+              <div className="meal-preview-bar">
+                <span>🍽️ <strong>{t.reportsMeals}:</strong> {translated(draft.meals)}</span>
+                <button
+                  type="button"
+                  className="btn ghost text-btn"
+                  onClick={() => {
+                    setSelectedFood('')
+                    setCustomFood('')
+                    setSelectedIntake('')
+                    setDraft((d) => ({ ...d, meals: '' }))
+                  }}
+                >
+                  ✕ {t.clearMealSelection}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="quick-nap-wrap">
+            <span className="quick-field-label">😴 {t.reportsNap}:</span>
+            <div className="nap-quick-pills" role="group" aria-label={t.reportsNap}>
+              {options.nap.map(([code, key]) => {
+                const isSelected = draft.nap === code
+                const emojis: Record<string, string> = { 'nap:none': '⛔', 'nap:short': '⏱️', 'nap:long': '💤' }
+                return (
+                  <button
+                    key={code}
+                    type="button"
+                    className={`choice-pill nap-pill ${isSelected ? 'active' : ''}`}
+                    aria-pressed={isSelected}
+                    onClick={() => { setSaved(false); setDraft({ ...draft, nap: code }) }}
+                  >
+                    <span className="choice-emoji">{emojis[code]}</span>
+                    <span>{t[key]}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
         <fieldset className="report-activities editor-section"><legend><span>02</span>{t.reportActivitiesTitle}</legend>
           {draft.activities && draft.activities.split('|').some((code) => !options.activities.some(([id]) => id === code))
             ? <><label>{t.reportsActivities}<input value={draft.activities} onChange={(e) => { setSaved(false); setDraft({ ...draft, activities: e.target.value }) }} /></label><button type="button" className="btn ghost" onClick={() => { setSaved(false); setDraft({ ...draft, activities: '' }) }}>{t.useChecklist}</button></>
-            : options.activities.map(([code, key]) => <label className="choice" key={code}><input type="checkbox" checked={draft.activities.split('|').includes(code)} onChange={(e) => { const chosen = draft.activities.split('|').filter(Boolean); setSaved(false); setDraft({ ...draft, activities: e.target.checked ? [...chosen, code].join('|') : chosen.filter((v) => v !== code).join('|') }) }} />{t[key]}</label>)}
+            : <div className="activities-chip-grid">{options.activities.map(([code, key]) => {
+                const activityIcons: Record<string, string> = { 'activity:outdoor': '🏃', 'activity:art': '🎨', 'activity:stories': '📖', 'activity:music': '🎵', 'activity:free': '🧩' }
+                const isChecked = draft.activities.split('|').includes(code)
+                return (
+                  <label className={`choice activity-card-choice ${isChecked ? 'is-active' : ''}`} key={code}>
+                    <input type="checkbox" checked={isChecked} onChange={(e) => { const chosen = draft.activities.split('|').filter(Boolean); setSaved(false); setDraft({ ...draft, activities: e.target.checked ? [...chosen, code].join('|') : chosen.filter((v) => v !== code).join('|') }) }} />
+                    <span className="activity-icon">{activityIcons[code] || '⭐'}</span>
+                    <span className="activity-text">{t[key]}</span>
+                  </label>
+                )
+              })}</div>}
         </fieldset>
         <div className="editor-section"><h3><span>03</span>{t.reportNoteTitle}</h3><label>{t.reportsNote}<textarea rows={4} maxLength={5000} value={draft.note} onChange={(e) => { setSaved(false); setDraft({ ...draft, note: e.target.value }) }} /></label></div>
         <div className="editor-section"><h3><span>04</span>{t.reportPhotoTitle}</h3>
