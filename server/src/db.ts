@@ -735,7 +735,8 @@ const seeds: Seed[] = [
 ]
 
 const count = db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }
-if (count.c === 0) {
+const shouldSeed = process.env.NODE_ENV !== 'production' || process.env.SEED_DEMO_DATA === 'true'
+if (count.c === 0 && shouldSeed) {
   const insert = db.prepare(
     'INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)',
   )
@@ -744,7 +745,7 @@ if (count.c === 0) {
   }
 }
 
-if (!process.env.KIDOLAND_DB_PATH && !db.prepare("SELECT id FROM users WHERE role = 'superadmin'").get()) {
+if (shouldSeed && !process.env.KIDOLAND_DB_PATH && !db.prepare("SELECT id FROM users WHERE role = 'superadmin'").get()) {
   db.prepare(`
     INSERT OR IGNORE INTO users (id, name, email, password_hash, role)
     VALUES ('u-superadmin', 'Super Admin', 'admin@kidoland.demo', ?, 'superadmin')

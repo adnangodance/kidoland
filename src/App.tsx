@@ -45,6 +45,8 @@ const DEMO: { email: string; password: string; roleKey: 'roleParent' | 'roleTeac
   { email: 'director@kidoland.demo', password: 'director123', roleKey: 'roleDirector' },
 ]
 
+const SHOW_DEMO = import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO === 'true'
+
 function Shell() {
   const { t, toggle, lang } = useI18n()
   const { user, token, loading, logout, expired, bootError, retryBoot } = useAuth()
@@ -347,22 +349,24 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
         </button>
       </form>
       <p className="hint">{t.loginHint}</p>
-      <div className="demo-accounts">
-        {DEMO.map((d) => (
-          <button
-            key={d.email}
-            type="button"
-            className="demo-chip"
-            disabled={busy}
-            onClick={() => {
-              setEmail(d.email)
-              setPassword(d.password)
-            }}
-          >
-            <Icon name={d.roleKey === 'roleParent' ? 'children' : d.roleKey === 'roleTeacher' ? 'leaf' : d.roleKey === 'roleSuperAdmin' ? 'superadmin' : 'dashboard'} /><span><strong>{d.name || t[d.roleKey]}</strong><small>{d.email}</small></span><Icon name="arrow" size={16} />
-          </button>
-        ))}
-      </div>
+      {SHOW_DEMO && (
+        <div className="demo-accounts">
+          {DEMO.map((d) => (
+            <button
+              key={d.email}
+              type="button"
+              className="demo-chip"
+              disabled={busy}
+              onClick={() => {
+                setEmail(d.email)
+                setPassword(d.password)
+              }}
+            >
+              <Icon name={d.roleKey === 'roleParent' ? 'children' : d.roleKey === 'roleTeacher' ? 'leaf' : d.roleKey === 'roleSuperAdmin' ? 'superadmin' : 'dashboard'} /><span><strong>{d.name || t[d.roleKey]}</strong><small>{d.email}</small></span><Icon name="arrow" size={16} />
+            </button>
+          ))}
+        </div>
+      )}
     </div></section>
   )
 }
