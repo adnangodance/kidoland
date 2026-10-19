@@ -1380,7 +1380,7 @@ app.get('/api/meals', requireAuth, (_req, res) => {
 
 app.post('/api/meals', requireAuth, (req, res) => {
   const user = authed(req)
-  if (user.role !== 'teacher' && user.role !== 'director') {
+  if (user.role !== 'teacher' && user.role !== 'director' && user.role !== 'superadmin') {
     return res.status(403).json({ error: 'forbidden' })
   }
   const parsed = mealBody.safeParse(req.body)

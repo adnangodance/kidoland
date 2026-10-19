@@ -48,7 +48,7 @@ export default function Meals() {
   const [saveError, setSaveError] = useState('')
   const [feedback, setFeedback] = useState('')
 
-  const canEdit = user?.role === 'teacher' || user?.role === 'director'
+  const canEdit = user?.role === 'teacher' || user?.role === 'director' || user?.role === 'superadmin'
 
   useEffect(() => {
     let cancelled = false
