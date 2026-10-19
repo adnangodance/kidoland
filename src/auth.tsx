@@ -86,6 +86,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return attempt === loginGeneration.current ? 'invalid' : 'cancelled'
         }
       },
+      setSession: (nextToken, nextUser) => {
+        loginGeneration.current++
+        localStorage.setItem(TOKEN_KEY, nextToken)
+        setExpired(false)
+        currentToken.current = nextToken
+        setBootError(false)
+        setToken(nextToken)
+        setUser(nextUser)
+      },
       logout: () => {
         loginGeneration.current++
         currentToken.current = null

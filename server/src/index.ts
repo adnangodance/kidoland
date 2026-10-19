@@ -61,6 +61,45 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'kidoland-api' })
 })
 
+app.get('/api/auth/setup-status', (_req, res) => {
+  const row = db.prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number }
+  res.json({ needsSetup: row.count === 0 })
+})
+
+const setupAdminSchema = z.object({
+  name: z.string().trim().min(2),
+  email: z.string().email(),
+  password: z.string().min(6),
+})
+
+app.post('/api/auth/setup-admin', (req, res) => {
+  const countRow = db.prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number }
+  if (countRow.count > 0) {
+    return res.status(403).json({ error: 'setup_already_completed' })
+  }
+  const parsed = setupAdminSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body' })
+  }
+  const { name, email, password } = parsed.data
+  const id = `u-${randomUUID()}`
+  const hash = bcrypt.hashSync(password, 10)
+  db.prepare('INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)').run(
+    id,
+    name,
+    email.toLowerCase(),
+    hash,
+    'superadmin',
+  )
+  const user: AuthUser = {
+    id,
+    name,
+    email: email.toLowerCase(),
+    role: 'superadmin',
+  }
+  res.status(201).json({ token: signToken(user), user })
+})
+
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),

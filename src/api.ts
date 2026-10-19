@@ -1,4 +1,8 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:4000'
+const API_URL = import.meta.env.VITE_API_URL !== undefined
+  ? import.meta.env.VITE_API_URL
+  : import.meta.env.PROD
+  ? ''
+  : 'http://127.0.0.1:4000'
 
 export type Role = 'parent' | 'teacher' | 'director' | 'superadmin'
 
@@ -94,6 +98,17 @@ export async function loginRequest(email: string, password: string) {
   return api<{ token: string; user: User }>('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
+  })
+}
+
+export async function getSetupStatus() {
+  return api<{ needsSetup: boolean }>('/api/auth/setup-status')
+}
+
+export async function setupAdminRequest(name: string, email: string, password: string) {
+  return api<{ token: string; user: User }>('/api/auth/setup-admin', {
+    method: 'POST',
+    body: JSON.stringify({ name, email, password }),
   })
 }
 

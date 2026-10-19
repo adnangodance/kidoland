@@ -9,6 +9,7 @@ export type AuthCtx = {
   bootError: boolean
   retryBoot: () => void
   login: (email: string, password: string) => Promise<string | null>
+  setSession: (token: string, user: User) => void
   logout: () => void
 }
 

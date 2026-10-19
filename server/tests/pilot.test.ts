@@ -11,14 +11,14 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { euro } from '../../src/pilot-utils.js'
 
-async function fixture(existing?: (db: Database.Database) => void) {
+async function fixture(existing?: (db: Database.Database) => void, extraEnv: Record<string, string> = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'kidoland-pilot-'))
   const databasePath = path.join(directory, 'test.sqlite')
   if (existing) { const db = new Database(databasePath); existing(db); db.close() }
   let child: ChildProcess | undefined
   let base = ''
   async function start() {
-    child = fork(fileURLToPath(new URL('./api-process.ts', import.meta.url)), [], { execArgv: ['--import', 'tsx'], env: { ...process.env, KIDOLAND_DB_PATH: databasePath }, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+    child = fork(fileURLToPath(new URL('./api-process.ts', import.meta.url)), [], { execArgv: ['--import', 'tsx'], env: { ...process.env, ...extraEnv, KIDOLAND_DB_PATH: databasePath }, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
     const processHandle = child
     base = await new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('API startup timeout')), 15000)
@@ -1692,5 +1692,59 @@ test('production static serving: serves index.html for client routes when dist e
     await f.dispose()
   }
 })
+
+test('first-time setup: setup-status and setup-admin bootstrap flow in production mode', async () => {
+  const f = await fixture(undefined, {
+    NODE_ENV: 'production',
+    JWT_SECRET: 'test-secure-key-at-least-32-chars-long-12345',
+    SEED_DEMO_DATA: 'false',
+  })
+  try {
+    await f.start()
+    // 1. Initial status shows setup is needed
+    const statusRes = await fetch(`${f.getBase()}/api/auth/setup-status`)
+    assert.equal(statusRes.status, 200)
+    const statusData = (await statusRes.json()) as { needsSetup: boolean }
+    assert.equal(statusData.needsSetup, true)
+
+    // 2. Invalid inputs are rejected
+    const badRes = await fetch(`${f.getBase()}/api/auth/setup-admin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: '', email: 'notanemail', password: '12' }),
+    })
+    assert.equal(badRes.status, 400)
+
+    // 3. Valid setup creates first superadmin and returns JWT token
+    const setupRes = await fetch(`${f.getBase()}/api/auth/setup-admin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Adnan Super Admin', email: 'adnan@kidoland.app', password: 'strong-password-123' }),
+    })
+    assert.equal(setupRes.status, 201)
+    const setupData = (await setupRes.json()) as { token: string; user: { role: string; email: string } }
+    assert.equal(setupData.user.role, 'superadmin')
+    assert.equal(setupData.user.email, 'adnan@kidoland.app')
+    assert.ok(setupData.token)
+
+    // 4. Second attempt is blocked with 403
+    const blockedRes = await fetch(`${f.getBase()}/api/auth/setup-admin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Attacker', email: 'hacker@evil.com', password: 'hack-password-123' }),
+    })
+    assert.equal(blockedRes.status, 403)
+    const blockedData = (await blockedRes.json()) as { error: string }
+    assert.equal(blockedData.error, 'setup_already_completed')
+
+    // 5. Subsequent status check shows needsSetup is false
+    const afterStatusRes = await fetch(`${f.getBase()}/api/auth/setup-status`)
+    const afterStatusData = (await afterStatusRes.json()) as { needsSetup: boolean }
+    assert.equal(afterStatusData.needsSetup, false)
+  } finally {
+    await f.dispose()
+  }
+})
+
 
 

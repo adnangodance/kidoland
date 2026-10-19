@@ -29,7 +29,7 @@ import { MedicationHealth } from './MedicationHealth'
 import { HygieneTracker } from './HygieneTracker'
 import { DailyTimeline } from './Timeline'
 import { FeatureManager } from './FeatureManager'
-import { getFeaturePermissions } from './api'
+import { getFeaturePermissions, getSetupStatus, setupAdminRequest } from './api'
 import './App.css'
 import './theme.css'
 import './Sidebar.css'
@@ -299,12 +299,49 @@ function WorkspacePreview() {
 
 function Login({ onSuccess }: { onSuccess: () => void }) {
   const { t } = useI18n()
-  const { login } = useAuth()
+  const { login, setSession } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState(false)
   const [busy, setBusy] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+
+  const [needsSetup, setNeedsSetup] = useState(false)
+  const [setupName, setSetupName] = useState('')
+  const [setupEmail, setSetupEmail] = useState('')
+  const [setupPassword, setSetupPassword] = useState('')
+  const [setupError, setSetupError] = useState(false)
+  const [setupBusy, setSetupBusy] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    getSetupStatus()
+      .then((res) => {
+        if (active && res.needsSetup) {
+          setNeedsSetup(true)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
+  async function onSetupSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (setupBusy) return
+    setSetupBusy(true)
+    setSetupError(false)
+    try {
+      const res = await setupAdminRequest(setupName, setupEmail, setupPassword)
+      setSession(res.token, res.user)
+      onSuccess()
+    } catch {
+      setSetupError(true)
+    } finally {
+      setSetupBusy(false)
+    }
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -315,6 +352,79 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
     setBusy(false)
     if (err) setError(true)
     else onSuccess()
+  }
+
+  if (needsSetup) {
+    return (
+      <section className="login-layout">
+        <aside className="login-story">
+          <BrandMark />
+          <p className="eyebrow"><Icon name="sun" size={17} />{t.brandCaption}</p>
+          <h2>{t.setupAdminTitle}</h2>
+          <p>{t.setupAdminDescription}</p>
+          <GardenArt />
+        </aside>
+        <div className="panel login-panel">
+          <span className="login-symbol"><Icon name="superadmin" size={25} /></span>
+          <h1 tabIndex={-1}>{t.setupAdminTitle}</h1>
+          <p className="panel-sub">{t.setupAdminDescription}</p>
+          <form className="login-form" onSubmit={onSetupSubmit}>
+            <label>
+              {t.setupAdminName}
+              <input
+                type="text"
+                disabled={setupBusy}
+                autoComplete="name"
+                value={setupName}
+                onChange={(e) => setSetupName(e.target.value)}
+                required
+                minLength={2}
+                placeholder="e.g. Adnan Godanci"
+              />
+            </label>
+            <label>
+              {t.loginEmail}
+              <input
+                type="email"
+                disabled={setupBusy}
+                autoComplete="email"
+                value={setupEmail}
+                onChange={(e) => setSetupEmail(e.target.value)}
+                required
+                placeholder="admin@example.com"
+              />
+            </label>
+            <label>
+              {t.loginPassword}
+              <span className="password-field">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  value={setupPassword}
+                  onChange={(e) => setSetupPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  disabled={setupBusy}
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  aria-label={showPassword ? t.hidePassword : t.showPassword}
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword((shown) => !shown)}
+                >
+                  <Icon name="eye" />
+                </button>
+              </span>
+            </label>
+            {setupError && <p role="alert" className="form-error">{t.setupAdminError}</p>}
+            <button type="submit" className="btn primary" disabled={setupBusy}>
+              {setupBusy ? t.attendanceSaving : t.setupAdminSubmit}
+            </button>
+          </form>
+        </div>
+      </section>
+    )
   }
 
   return (
