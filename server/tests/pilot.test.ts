@@ -1661,3 +1661,21 @@ test('child 360° profile & family showcase API: complete child overview and par
   }
 })
 
+test('production security: JWT_SECRET enforcement in production mode', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'kidoland-jwt-test-'))
+  const databasePath = path.join(directory, 'test.sqlite')
+  try {
+    const child = fork(fileURLToPath(new URL('./api-process.ts', import.meta.url)), [], {
+      execArgv: ['--import', 'tsx'],
+      env: { ...process.env, NODE_ENV: 'production', JWT_SECRET: '', KIDOLAND_DB_PATH: databasePath },
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+    })
+    const exitCode = await new Promise<number | null>((resolve) => {
+      child.once('exit', (code) => resolve(code))
+    })
+    assert.notEqual(exitCode, 0, 'Server must refuse to boot in production with missing JWT_SECRET')
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+

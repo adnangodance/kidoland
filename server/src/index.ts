@@ -8,7 +8,25 @@ import { requireAuth, signToken, type AuthUser } from './auth.js'
 
 export const app = express()
 
-app.use(cors({ origin: true, credentials: true }))
+const corsOrigin = process.env.CORS_ORIGIN
+const allowedOrigins = corsOrigin
+  ? corsOrigin.split(',').map((o) => o.trim()).filter(Boolean)
+  : null
+
+app.use(
+  cors({
+    origin: allowedOrigins
+      ? (origin, callback) => {
+          if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true)
+          } else {
+            callback(new Error('Not allowed by CORS'))
+          }
+        }
+      : true,
+    credentials: true,
+  }),
+)
 app.use(express.json({ limit: '10mb' }))
 app.use((error: { type?: string }, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (error.type === 'entity.parse.failed' || error.type === 'entity.too.large') return res.status(400).json({ error: 'invalid_body' })

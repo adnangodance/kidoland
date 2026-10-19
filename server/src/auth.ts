@@ -2,7 +2,20 @@ import type { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { db, type DbUser } from './db.js'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'kidoland-dev-secret-change-me'
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET
+  if (process.env.NODE_ENV === 'production') {
+    if (!secret || secret === 'kidoland-dev-secret-change-me' || secret.length < 32) {
+      throw new Error(
+        'FATAL: In production, JWT_SECRET must be set as an environment variable and be at least 32 characters long.',
+      )
+    }
+    return secret
+  }
+  return secret || 'kidoland-dev-secret-change-me'
+}
+
+export const JWT_SECRET = getJwtSecret()
 
 export type AuthUser = Pick<DbUser, 'id' | 'name' | 'email' | 'role'>
 
