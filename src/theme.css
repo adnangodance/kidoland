@@ -1883,8 +1883,6 @@ kbd { font-family: inherit; font-size: 10px; color: #74786c; }
     box-sizing: border-box;
   }
   .editor-actions .btn { width: 100%; font-size: 12px; box-sizing: border-box; }
-  .meal-course-tabs { grid-template-columns: repeat(2, 1fr); }
-  .portion-scale-grid { grid-template-columns: repeat(2, 1fr); }
   .activities-chip-grid { grid-template-columns: minmax(0, 1fr); }
   .report-activities.editor-section { grid-template-columns: minmax(0, 1fr); }
   .editor-section { padding: 22px 0; }

@@ -37,9 +37,83 @@ function localizeDish(dishText: string, currentLang: string): string {
   return dishText.trim()
 }
 
+function getMenuSummary(menu: WeeklyMeal | undefined, currentLang: string): string {
+  if (!menu) return ''
+  const parts: string[] = []
+  const isSq = currentLang === 'sq'
+  if (menu.breakfast) {
+    const label = isSq ? 'Mëngjesi' : 'Breakfast'
+    parts.push(`${label}: ${localizeDish(menu.breakfast, currentLang)}`)
+  }
+  if (menu.lunch) {
+    const label = isSq ? 'Dreka' : 'Lunch'
+    parts.push(`${label}: ${localizeDish(menu.lunch, currentLang)}`)
+  }
+  const snack = menu.morningSnack || menu.afternoonSnack
+  if (snack) {
+    const label = isSq ? 'Zamra' : 'Snack'
+    parts.push(`${label}: ${localizeDish(snack, currentLang)}`)
+  }
+  return parts.join(' · ')
+}
+
+function getMealRatingDetails(code: string, currentLang: string) {
+  const isSq = currentLang === 'sq'
+  switch (code) {
+    case 'meals:very_well':
+      return {
+        label: isSq ? 'Shumë mirë' : 'Very well',
+        icon: '🌟',
+        headline: isSq
+          ? 'Hëngri shumë mirë dhe me oreks të gjithë ushqimin e ditës.'
+          : 'Ate very well with great appetite, finished all meals.',
+      }
+    case 'meals:all':
+      return {
+        label: isSq ? 'Mirë' : 'Well',
+        icon: '👍',
+        headline: isSq
+          ? 'Hëngri mirë të gjithë racionin e shërbyer.'
+          : 'Ate well and finished the served portions.',
+      }
+    case 'meals:some':
+      return {
+        label: isSq ? 'Pak' : 'Some',
+        icon: '🤏',
+        headline: isSq
+          ? 'Hëngri një pjesë të ushqimit sot.'
+          : 'Ate some of the meal today.',
+      }
+    case 'meals:little':
+      return {
+        label: isSq ? 'Shumë pak' : 'Little',
+        icon: '⚠️',
+        headline: isSq
+          ? 'Hëngri shumë pak sot, do të ndiqet me vëmendje.'
+          : 'Ate very little today, will monitor closely.',
+      }
+    default:
+      return null
+  }
+}
+
+function buildMealNoteText(code: string, menu: WeeklyMeal | undefined, currentLang: string): string {
+  const rating = getMealRatingDetails(code, currentLang)
+  if (!rating) return ''
+  const isSq = currentLang === 'sq'
+  const menuSummary = getMenuSummary(menu, currentLang)
+  const menuPart = menuSummary ? ` (${isSq ? 'Menuja e ditës' : "Today's menu"}: ${menuSummary})` : ''
+  return `🍽️ ${rating.headline}${menuPart}`
+}
+
 const options = {
   mood: [['mood:happy', 'moodHappy'], ['mood:calm', 'moodCalm'], ['mood:tired', 'moodTired'], ['mood:upset', 'moodUpset']],
-  meals: [['meals:all', 'mealsAll'], ['meals:some', 'mealsSome'], ['meals:little', 'mealsLittle']],
+  meals: [
+    ['meals:very_well', 'mealsVeryWell'],
+    ['meals:all', 'mealsAll'],
+    ['meals:some', 'mealsSome'],
+    ['meals:little', 'mealsLittle'],
+  ],
   nap: [['nap:none', 'napNone'], ['nap:short', 'napShort'], ['nap:long', 'napLong']],
   activities: [['activity:outdoor', 'activityOutdoor'], ['activity:art', 'activityArt'], ['activity:stories', 'activityStories'], ['activity:music', 'activityMusic'], ['activity:free', 'activityFree']],
 } as const
@@ -65,15 +139,7 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [batchSaved, setBatchSaved] = useState(false)
-  const [customFood, setCustomFood] = useState('')
-  const [selectedIntake, setSelectedIntake] = useState('')
-  const [activeCourse, setActiveCourse] = useState<'breakfast' | 'lunch' | 'snack' | 'all'>(() => {
-    const hour = new Date().getHours()
-    if (hour < 11) return 'breakfast'
-    if (hour < 14) return 'lunch'
-    return 'snack'
-  })
-  const [showCustomInput, setShowCustomInput] = useState(false)
+  const [noteInserted, setNoteInserted] = useState(false)
   const [weeklyMeals, setWeeklyMeals] = useState<WeeklyMeal[]>([])
   const canWrite = user?.role !== 'parent'
   const selectedChild = children.find((c) => c.id === childId)
@@ -97,170 +163,59 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
     return weeklyMeals.find((m) => m.dayOfWeek === activeDayOfWeek)
   }, [weeklyMeals, activeDayOfWeek])
 
-  const currentDishText = useMemo(() => {
-    if (!todaysMenu) return ''
-    if (activeCourse === 'breakfast') return localizeDish(todaysMenu.breakfast, lang)
-    if (activeCourse === 'lunch') return localizeDish(todaysMenu.lunch, lang)
-    if (activeCourse === 'snack') return localizeDish(todaysMenu.morningSnack || todaysMenu.afternoonSnack, lang)
-    if (activeCourse === 'all') {
-      const b = localizeDish(todaysMenu.breakfast, lang)
-      const l = localizeDish(todaysMenu.lunch, lang)
-      return [b, l].filter(Boolean).join(', ')
-    }
-    return ''
-  }, [todaysMenu, activeCourse, lang])
+  const mealRating = useMemo(() => {
+    if (!draft.meals) return null
+    return getMealRatingDetails(draft.meals, lang)
+  }, [draft.meals, lang])
 
-  function getCourseDish(course: 'breakfast' | 'lunch' | 'snack' | 'all') {
-    if (!todaysMenu) return ''
-    if (course === 'breakfast') return localizeDish(todaysMenu.breakfast, lang)
-    if (course === 'lunch') return localizeDish(todaysMenu.lunch, lang)
-    if (course === 'snack') return localizeDish(todaysMenu.morningSnack || todaysMenu.afternoonSnack, lang)
-    if (course === 'all') {
-      const b = localizeDish(todaysMenu.breakfast, lang)
-      const l = localizeDish(todaysMenu.lunch, lang)
-      return [b, l].filter(Boolean).join(', ')
-    }
-    return ''
-  }
-
-  function getCourseName(course: 'breakfast' | 'lunch' | 'snack' | 'all') {
-    if (course === 'breakfast') return t.mealBreakfast
-    if (course === 'lunch') return t.mealLunch
-    if (course === 'snack') return t.mealSnack
-    return t.mealAllMeals
-  }
-
-  function applyMealUpdate(course: 'breakfast' | 'lunch' | 'snack' | 'all', custom: string, intake: string) {
-    const intakeLabels: Record<string, string> = {
-      'intake:very_well': t.mealIntakeVeryWell,
-      'intake:well': t.mealIntakeWell,
-      'intake:some': t.mealIntakeSome,
-      'intake:little': t.mealIntakeLittle,
-    }
-    const intakeLabel = intakeLabels[intake] || ''
-    if (!intakeLabel) {
-      setDraft((d) => ({ ...d, meals: '' }))
-      return
-    }
-
-    const courseLabel = getCourseName(course)
-    const dish = custom.trim() || getCourseDish(course)
-
-    if (dish) {
-      setDraft((d) => ({ ...d, meals: `${courseLabel}: ${dish} · ${intakeLabel}` }))
-    } else {
-      setDraft((d) => ({ ...d, meals: `${courseLabel} · ${intakeLabel}` }))
-    }
-  }
-
-  useEffect(() => {
-    if (!draft.meals) {
-      setCustomFood('')
-      setSelectedIntake('')
-      return
-    }
-    if (draft.meals === 'meals:all') {
-      setSelectedIntake('intake:very_well')
-      return
-    }
-    if (draft.meals === 'meals:some') {
-      setSelectedIntake('intake:some')
-      return
-    }
-    if (draft.meals === 'meals:little') {
-      setSelectedIntake('intake:little')
-      return
-    }
-    if (draft.meals.includes(' · ')) {
-      const parts = draft.meals.split(' · ')
-      const foodPart = parts[0] || ''
-      if (foodPart.startsWith(`${t.mealBreakfast}:`) || foodPart === t.mealBreakfast) {
-        setActiveCourse('breakfast')
-        const afterPrefix = foodPart.replace(`${t.mealBreakfast}:`, '').trim()
-        if (afterPrefix && afterPrefix !== localizeDish(todaysMenu?.breakfast || '', lang)) {
-          setCustomFood(afterPrefix)
-          setShowCustomInput(true)
+  function handleMealSelect(code: string) {
+    setSaved(false)
+    const nextVal = draft.meals === code ? '' : code
+    setDraft((prev) => {
+      const updated = { ...prev, meals: nextVal }
+      if (nextVal) {
+        const generatedNote = buildMealNoteText(nextVal, todaysMenu, lang)
+        if (!prev.note.trim()) {
+          updated.note = generatedNote
+        } else {
+          const lines = prev.note.split('\n')
+          const filtered = lines.filter(
+            (l) =>
+              !l.startsWith('🍽️') &&
+              !l.includes(t.todaysMenuNotePrefix) &&
+              !l.includes('Menuja e ditës') &&
+              !l.includes("Today's menu"),
+          )
+          if (lines.length !== filtered.length) {
+            updated.note = [...filtered, generatedNote].join('\n').trim()
+          }
         }
-      } else if (foodPart.startsWith(`${t.mealLunch}:`) || foodPart === t.mealLunch) {
-        setActiveCourse('lunch')
-        const afterPrefix = foodPart.replace(`${t.mealLunch}:`, '').trim()
-        if (afterPrefix && afterPrefix !== localizeDish(todaysMenu?.lunch || '', lang)) {
-          setCustomFood(afterPrefix)
-          setShowCustomInput(true)
-        }
-      } else if (foodPart.startsWith(`${t.mealSnack}:`) || foodPart === t.mealSnack) {
-        setActiveCourse('snack')
-        const afterPrefix = foodPart.replace(`${t.mealSnack}:`, '').trim()
-        const snackDish = localizeDish(todaysMenu?.morningSnack || todaysMenu?.afternoonSnack || '', lang)
-        if (afterPrefix && afterPrefix !== snackDish) {
-          setCustomFood(afterPrefix)
-          setShowCustomInput(true)
-        }
-      } else if (foodPart.startsWith(`${t.mealAllMeals}:`) || foodPart === t.mealAllMeals) {
-        setActiveCourse('all')
-      } else {
-        setCustomFood(foodPart)
-        setShowCustomInput(true)
       }
+      return updated
+    })
+  }
 
-      const intakePart = parts[1] || ''
-      if (intakePart === t.mealIntakeVeryWell || intakePart.includes('Shumë') || intakePart.includes('Very') || intakePart.includes('gjithën') || intakePart.includes('All')) {
-        setSelectedIntake('intake:very_well')
-      } else if (intakePart === t.mealIntakeWell || intakePart.includes('Mirë') || intakePart.includes('Well') || intakePart.includes('umicën') || intakePart.includes('Most')) {
-        setSelectedIntake('intake:well')
-      } else if (intakePart === t.mealIntakeSome || intakePart.includes('Pak') || intakePart.includes('Some') || intakePart.includes('jysmën') || intakePart.includes('Half')) {
-        setSelectedIntake('intake:some')
-      } else if (intakePart === t.mealIntakeLittle || intakePart.includes('pak') || intakePart.includes('Little')) {
-        setSelectedIntake('intake:little')
+  function insertMealCommentIntoNote() {
+    if (!draft.meals) return
+    const noteText = buildMealNoteText(draft.meals, todaysMenu, lang)
+    if (!noteText) return
+    setSaved(false)
+    setDraft((prev) => {
+      if (!prev.note.trim()) {
+        return { ...prev, note: noteText }
       }
-    } else {
-      setCustomFood(draft.meals)
-      setShowCustomInput(true)
-    }
-  }, [draft.meals, t, todaysMenu, lang])
-
-  function handleCourseSelect(course: 'breakfast' | 'lunch' | 'snack' | 'all') {
-    setSaved(false)
-    setActiveCourse(course)
-    if (selectedIntake) {
-      applyMealUpdate(course, customFood, selectedIntake)
-    }
-  }
-
-  function handleIntakeSelect(intakeKey: string) {
-    setSaved(false)
-    const nextIntake = selectedIntake === intakeKey ? '' : intakeKey
-    setSelectedIntake(nextIntake)
-    if (!nextIntake) {
-      setDraft((d) => ({ ...d, meals: '' }))
-      return
-    }
-    applyMealUpdate(activeCourse, customFood, nextIntake)
-  }
-
-  function handleCustomFoodChange(text: string) {
-    setSaved(false)
-    setCustomFood(text)
-    if (selectedIntake) {
-      applyMealUpdate(activeCourse, text, selectedIntake)
-    }
-  }
-
-  function handleTagClick(tag: string) {
-    setSaved(false)
-    const next = customFood ? `${customFood}, ${tag}` : tag
-    setCustomFood(next)
-    if (selectedIntake) {
-      applyMealUpdate(activeCourse, next, selectedIntake)
-    }
-  }
-
-  function clearMeals() {
-    setSaved(false)
-    setCustomFood('')
-    setSelectedIntake('')
-    setShowCustomInput(false)
-    setDraft((d) => ({ ...d, meals: '' }))
+      const lines = prev.note.split('\n')
+      const filtered = lines.filter(
+        (l) =>
+          !l.startsWith('🍽️') &&
+          !l.includes(t.todaysMenuNotePrefix) &&
+          !l.includes('Menuja e ditës') &&
+          !l.includes("Today's menu"),
+      )
+      return { ...prev, note: [...filtered, noteText].join('\n').trim() }
+    })
+    setNoteInserted(true)
+    setTimeout(() => setNoteInserted(false), 2500)
   }
 
   function goToNextChild() {
@@ -298,7 +253,6 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
     generation.current++
     setReports([]); setDraft(empty); setSaved(false); setError(''); setImageError(''); setLoading(true)
     if (fileInputRef.current) fileInputRef.current.value = ''
-    setShowCustomInput(false)
     setChildId(nextChild); setDate(nextDate)
   }
   function handleImage(e: React.ChangeEvent<HTMLInputElement>) {
@@ -472,7 +426,7 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
               </div>
             </div>
 
-            {/* Card 2: Unified Meal Composer (Brightwheel & Famly pattern) */}
+            {/* Card 2: Meals (Fast 1-tap rating with live menu comment) */}
             <div className="daily-care-card meal-care-card">
               <div className="care-card-header">
                 <span className="care-card-icon" aria-hidden="true">🍽️</span>
@@ -486,175 +440,110 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
                     )}
                   </div>
                   <span className="care-card-subtitle">
-                    {lang === 'sq' ? 'Zgjidhni vaktin dhe sa hëngri fëmija (me 2 prekje të shpejta)' : 'Select meal course and portion eaten (in 2 quick taps)'}
+                    {lang === 'sq' ? 'Sa hëngri fëmija sot?' : 'How well did the child eat today?'}
                   </span>
                 </div>
               </div>
 
-              {/* Course Tabs: Breakfast / Lunch / Snack / All */}
-              <div className="meal-course-tabs" role="tablist" aria-label={t.reportsMeals}>
-                {(['breakfast', 'lunch', 'snack', 'all'] as const).map((courseKey) => {
-                  const isCurrent = activeCourse === courseKey
-                  const courseIcons = { breakfast: '🥣', lunch: '🍲', snack: '🍎', all: '🍽️' }
-                  const courseLabels = {
-                    breakfast: t.mealBreakfast,
-                    lunch: t.mealLunch,
-                    snack: t.mealSnack,
-                    all: t.mealAllMeals,
+              {/* Quick 1-tap Meal Choices */}
+              <div className="care-choice-grid meal-choice-grid" role="group" aria-label={t.reportsMeals}>
+                {options.meals.map(([code, key]) => {
+                  const isSelected = draft.meals === code
+                  const mealEmojis: Record<string, string> = {
+                    'meals:very_well': '🌟',
+                    'meals:all': '👍',
+                    'meals:some': '🤏',
+                    'meals:little': '⚠️',
+                  }
+                  const mealButtonLabels: Record<string, string> = {
+                    'meals:very_well': t.mealIntakeVeryWell,
+                    'meals:all': t.mealIntakeWell,
+                    'meals:some': t.mealIntakeSome,
+                    'meals:little': t.mealIntakeLittle,
                   }
                   return (
                     <button
-                      key={courseKey}
+                      key={code}
                       type="button"
-                      role="tab"
-                      aria-selected={isCurrent}
-                      className={`meal-course-tab ${isCurrent ? 'is-active' : ''}`}
-                      onClick={() => handleCourseSelect(courseKey)}
+                      className={`care-choice-btn meal-btn ${isSelected ? 'active' : ''}`}
+                      aria-pressed={isSelected}
+                      onClick={() => handleMealSelect(code)}
                     >
-                      <span className="course-tab-icon">{courseIcons[courseKey]}</span>
-                      <span className="course-tab-name">{courseLabels[courseKey]}</span>
+                      <span className="choice-indicator" aria-hidden="true" />
+                      <span className="care-btn-emoji">{mealEmojis[code] || '🍽️'}</span>
+                      <span className="care-btn-label">{mealButtonLabels[code] || t[key]}</span>
                     </button>
                   )
                 })}
               </div>
 
-              {/* Today's served dish badge & editor */}
-              <div className="course-menu-card">
-                {currentDishText || customFood ? (
-                  <div className="course-menu-content">
-                    <div className="course-menu-lead">
-                      <span className="course-menu-badge">
-                        📋 {todaysMenu && !customFood ? t.todaysMenuServed : (lang === 'sq' ? 'Ushqimi i përzgjedhur' : 'Selected food')}:
-                      </span>
-                      {!showCustomInput ? (
-                        <button
-                          type="button"
-                          className="btn-link-edit"
-                          onClick={() => setShowCustomInput(true)}
-                        >
-                          ✏️ {t.customMealToggle}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn-link-edit"
-                          onClick={() => {
-                            setCustomFood('')
-                            setShowCustomInput(false)
-                            if (selectedIntake) {
-                              applyMealUpdate(activeCourse, '', selectedIntake)
-                            }
-                          }}
-                        >
-                          ✕ {lang === 'sq' ? 'Kthe te menuja' : 'Use menu'}
-                        </button>
-                      )}
-                    </div>
-
-                    {!showCustomInput ? (
-                      <div className="served-dish-display">
-                        <span className="served-dish-icon">
-                          {activeCourse === 'breakfast' ? '🥣' : activeCourse === 'lunch' ? '🍲' : activeCourse === 'snack' ? '🍎' : '🍽️'}
-                        </span>
-                        <span className="served-dish-title">
-                          {customFood || currentDishText}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="custom-dish-box">
-                        <input
-                          type="text"
-                          className="custom-dish-input"
-                          placeholder={t.mealCustomFoodPlaceholder}
-                          value={customFood}
-                          onChange={(e) => handleCustomFoodChange(e.target.value)}
-                          aria-label={t.presetMealsCustom}
-                        />
-                        <div className="custom-tags-row">
-                          <span className="custom-tags-label">{lang === 'sq' ? 'Sugjerime të shpejta:' : 'Quick tags:'}</span>
-                          {[
-                            { label: t.mealDishSoup, icon: '🥗' },
-                            { label: t.mealDishMain, icon: '🍝' },
-                            { label: t.mealDishBread, icon: '🥪' },
-                            { label: t.mealDishFruit, icon: '🍌' },
-                          ].map((tag) => (
-                            <button
-                              key={tag.label}
-                              type="button"
-                              className="quick-tag-chip"
-                              onClick={() => handleTagClick(tag.label)}
-                            >
-                              <span>{tag.icon}</span> {tag.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="course-no-menu-content">
-                    <input
-                      type="text"
-                      className="custom-dish-input"
-                      placeholder={t.mealCustomFoodPlaceholder}
-                      value={customFood}
-                      onChange={(e) => handleCustomFoodChange(e.target.value)}
-                      aria-label={t.presetMealsCustom}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Portion scale selector (2nd tap) */}
-              <div className="portion-scale-section">
-                <span className="portion-scale-heading">
-                  {t.portionLabel}
-                </span>
-                <div className="portion-scale-grid" role="group" aria-label={t.portionLabel}>
-                  {[
-                    { key: 'intake:very_well', label: t.mealIntakeVeryWell, pct: '100%', icon: '🌟', tone: 'great' },
-                    { key: 'intake:well', label: t.mealIntakeWell, pct: '75%', icon: '👍', tone: 'good' },
-                    { key: 'intake:some', label: t.mealIntakeSome, pct: '50%', icon: '🤏', tone: 'moderate' },
-                    { key: 'intake:little', label: t.mealIntakeLittle, pct: '<25%', icon: '⚠️', tone: 'little' },
-                  ].map((item) => {
-                    const isSelected = selectedIntake === item.key
-                    return (
-                      <button
-                        key={item.key}
-                        type="button"
-                        className={`portion-card-btn ${item.tone} ${isSelected ? 'active' : ''}`}
-                        aria-pressed={isSelected}
-                        onClick={() => handleIntakeSelect(item.key)}
-                      >
-                        <div className="portion-card-top">
-                          <span className="portion-card-icon">{item.icon}</span>
-                          <span className="portion-card-pct">{item.pct}</span>
-                        </div>
-                        <div className="portion-card-bottom">
-                          <span className="portion-radio-ring" aria-hidden="true" />
-                          <span className="portion-card-name">{item.label}</span>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Active selection preview bar */}
-              {draft.meals && (
-                <div className="meal-preview-bar">
-                  <div className="meal-preview-text">
-                    <span className="preview-indicator">✓</span>
-                    <span><strong>{t.reportsMeals}:</strong> {translated(draft.meals)}</span>
-                  </div>
+              {/* Legacy or custom meal text if present */}
+              {draft.meals && !options.meals.some(([code]) => code === draft.meals) && (
+                <div className="custom-meal-badge-row">
+                  <span className="custom-meal-pill">📝 {translated(draft.meals)}</span>
                   <button
                     type="button"
-                    className="clear-meal-btn"
-                    onClick={clearMeals}
+                    className="btn ghost small-btn"
+                    onClick={() => {
+                      setSaved(false)
+                      setDraft((prev) => ({ ...prev, meals: '' }))
+                    }}
                     title={t.clearMealSelection}
                   >
-                    ✕ {t.clearMealSelection}
+                    ✕
                   </button>
+                </div>
+              )}
+
+              {/* Live Menu Comment Box: shows what the child ate based on today's menu */}
+              {draft.meals && mealRating && (
+                <div className="meal-menu-comment-box" role="region" aria-label={t.mealCommentTitle}>
+                  <div className="meal-comment-badge-row">
+                    <div className="meal-comment-header-left">
+                      <span className="meal-comment-icon">💬</span>
+                      <strong className="meal-comment-title">{t.mealCommentTitle}</strong>
+                    </div>
+                    <button
+                      type="button"
+                      className={`btn-insert-note ${noteInserted ? 'is-inserted' : ''}`}
+                      onClick={insertMealCommentIntoNote}
+                      title={t.mealInsertIntoNote}
+                    >
+                      {noteInserted ? `✓ ${t.mealInsertedFeedback}` : `📝 ${t.mealInsertIntoNote}`}
+                    </button>
+                  </div>
+
+                  <div className="meal-comment-main-line">
+                    <span className="meal-comment-rating-tag">{mealRating.icon} {mealRating.label}</span>
+                    <p className="meal-comment-headline">{mealRating.headline}</p>
+                  </div>
+
+                  {todaysMenu ? (
+                    <div className="meal-comment-menu-details">
+                      <span className="meal-comment-menu-label">📋 {t.todaysMenuNotePrefix}:</span>
+                      <div className="meal-comment-dishes-chips">
+                        {todaysMenu.breakfast && (
+                          <span className="meal-dish-chip">
+                            🥣 <strong>{t.mealBreakfast}:</strong> {localizeDish(todaysMenu.breakfast, lang)}
+                          </span>
+                        )}
+                        {todaysMenu.lunch && (
+                          <span className="meal-dish-chip">
+                            🍲 <strong>{t.mealLunch}:</strong> {localizeDish(todaysMenu.lunch, lang)}
+                          </span>
+                        )}
+                        {(todaysMenu.morningSnack || todaysMenu.afternoonSnack) && (
+                          <span className="meal-dish-chip">
+                            🍎 <strong>{t.mealSnack}:</strong> {localizeDish(todaysMenu.morningSnack || todaysMenu.afternoonSnack, lang)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="meal-no-menu-hint">
+                      ℹ️ {lang === 'sq' ? 'Nuk ka menu të regjistruar për sot te Menytë.' : 'No menu registered for today in Meals.'}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -725,7 +614,16 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
       <div className="report-story">
         {(['mood', 'meals', 'nap', 'activities'] as const).map((field) => <div className={`report-story-entry story-${field}`} key={field}>
           <span className="story-marker" aria-hidden="true">{fieldIcons[field]}</span>
-          <div className="story-content"><h3>{t[({ mood: 'reportsMood', meals: 'reportsMeals', nap: 'reportsNap', activities: 'reportsActivities' } as const)[field]]}<span aria-hidden="true">{fieldIcons[field]}</span></h3><p>{translated(report[field])}</p></div>
+          <div className="story-content">
+            <h3>{t[({ mood: 'reportsMood', meals: 'reportsMeals', nap: 'reportsNap', activities: 'reportsActivities' } as const)[field]]}<span aria-hidden="true">{fieldIcons[field]}</span></h3>
+            <p>{translated(report[field])}</p>
+            {field === 'meals' && todaysMenu && (
+              <div className="story-meal-menu-hint">
+                <span className="story-menu-prefix">📋 {t.todaysMenuNotePrefix}:</span>
+                <span className="story-menu-text">{getMenuSummary(todaysMenu, lang)}</span>
+              </div>
+            )}
+          </div>
         </div>)}
         {(report.note || report.imageUrl) && <div className="report-story-entry story-moment">
           <span className="story-marker" aria-hidden="true"><Icon name="moments" size={18} /></span>
