@@ -1,7 +1,7 @@
 /* Network effects reset pending UI and invalidate generation counters on context/unmount changes. */
 /* eslint-disable react/set-state-in-effect, react-hooks/exhaustive-deps */
-import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { listChildren, listReports, saveReport, saveBatchReports, type Child, type Report } from './api'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { listChildren, listReports, saveReport, saveBatchReports, listWeeklyMeals, type Child, type Report, type WeeklyMeal, type DayOfWeek } from './api'
 import { useAuth } from './auth-context'
 import { useI18n } from './i18n/language-context'
 import { localCalendarDate, validDate } from './attendance-date.js'
@@ -11,6 +11,31 @@ import { SeaGodanciBadge } from './child-highlight'
 import { isSeaGodanci } from './child-highlight-util'
 
 import Icon from './Icon'
+
+const DAYS_MAP: Record<number, DayOfWeek> = {
+  1: 'monday',
+  2: 'tuesday',
+  3: 'wednesday',
+  4: 'thursday',
+  5: 'friday',
+}
+
+function getDayOfWeek(dateStr: string): DayOfWeek | null {
+  if (!validDate(dateStr)) return null
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const dt = new Date(y, m - 1, d)
+  const day = dt.getDay()
+  return DAYS_MAP[day] || null
+}
+
+function localizeDish(dishText: string, currentLang: string): string {
+  if (!dishText) return ''
+  if (dishText.includes(' / ')) {
+    const parts = dishText.split(' / ')
+    return currentLang === 'sq' ? parts[0].trim() : parts[1]?.trim() || parts[0].trim()
+  }
+  return dishText.trim()
+}
 
 const options = {
   mood: [['mood:happy', 'moodHappy'], ['mood:calm', 'moodCalm'], ['mood:tired', 'moodTired'], ['mood:upset', 'moodUpset']],
@@ -43,9 +68,27 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
   const [selectedFood, setSelectedFood] = useState('')
   const [customFood, setCustomFood] = useState('')
   const [selectedIntake, setSelectedIntake] = useState('')
+  const [weeklyMeals, setWeeklyMeals] = useState<WeeklyMeal[]>([])
   const canWrite = user?.role !== 'parent'
   const selectedChild = children.find((c) => c.id === childId)
   const currentIndex = children.findIndex((c) => c.id === childId)
+
+  useEffect(() => {
+    if (!token) return
+    const ac = new AbortController()
+    listWeeklyMeals(token, ac.signal)
+      .then((res) => {
+        if (alive.current) setWeeklyMeals(res.meals)
+      })
+      .catch(() => {})
+    return () => ac.abort()
+  }, [token])
+
+  const activeDayOfWeek = useMemo(() => getDayOfWeek(date), [date])
+  const todaysMenu = useMemo(() => {
+    if (!activeDayOfWeek) return undefined
+    return weeklyMeals.find((m) => m.dayOfWeek === activeDayOfWeek)
+  }, [weeklyMeals, activeDayOfWeek])
 
   useEffect(() => {
     if (!draft.meals) {
@@ -68,7 +111,19 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
     }
     if (draft.meals.includes(' · ')) {
       const parts = draft.meals.split(' · ')
-      setSelectedFood(parts[0] || '')
+      const foodPart = parts[0] || ''
+      setCustomFood(foodPart)
+      if (foodPart.startsWith(`${t.mealBreakfast}:`) || foodPart === t.mealBreakfast) {
+        setSelectedFood(t.mealBreakfast)
+      } else if (foodPart.startsWith(`${t.mealLunch}:`) || foodPart === t.mealLunch) {
+        setSelectedFood(t.mealLunch)
+      } else if (foodPart.startsWith(`${t.mealSnack}:`) || foodPart === t.mealSnack) {
+        setSelectedFood(t.mealSnack)
+      } else if (foodPart.startsWith(`${t.mealAllMeals}:`) || foodPart === t.mealAllMeals) {
+        setSelectedFood(t.mealAllMeals)
+      } else {
+        setSelectedFood(foodPart)
+      }
       const intakePart = parts[1] || ''
       if (intakePart.includes(t.mealIntakeVeryWell) || intakePart.includes('Shumë') || intakePart.includes('Very')) {
         setSelectedIntake('intake:very_well')
@@ -81,6 +136,15 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
       }
     } else {
       setCustomFood(draft.meals)
+      if (draft.meals.startsWith(`${t.mealBreakfast}:`) || draft.meals === t.mealBreakfast) {
+        setSelectedFood(t.mealBreakfast)
+      } else if (draft.meals.startsWith(`${t.mealLunch}:`) || draft.meals === t.mealLunch) {
+        setSelectedFood(t.mealLunch)
+      } else if (draft.meals.startsWith(`${t.mealSnack}:`) || draft.meals === t.mealSnack) {
+        setSelectedFood(t.mealSnack)
+      } else if (draft.meals.startsWith(`${t.mealAllMeals}:`) || draft.meals === t.mealAllMeals) {
+        setSelectedFood(t.mealAllMeals)
+      }
     }
   }, [draft.meals, t])
 
@@ -111,7 +175,34 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
     setSaved(false)
     const nextFood = selectedFood === foodName ? '' : foodName
     setSelectedFood(nextFood)
-    updateMealDraft(nextFood, customFood, selectedIntake)
+
+    let nextCustom = customFood
+    if (nextFood && todaysMenu) {
+      let menuDish = ''
+      if (nextFood === t.mealBreakfast) {
+        menuDish = localizeDish(todaysMenu.breakfast, lang)
+      } else if (nextFood === t.mealLunch) {
+        menuDish = localizeDish(todaysMenu.lunch, lang)
+      } else if (nextFood === t.mealSnack) {
+        menuDish = localizeDish(todaysMenu.morningSnack || todaysMenu.afternoonSnack, lang)
+      } else if (nextFood === t.mealAllMeals) {
+        const b = localizeDish(todaysMenu.breakfast, lang)
+        const l = localizeDish(todaysMenu.lunch, lang)
+        menuDish = [b, l].filter(Boolean).join(', ')
+      }
+
+      if (menuDish) {
+        nextCustom = `${nextFood}: ${menuDish}`
+        setCustomFood(nextCustom)
+      }
+    } else if (!nextFood) {
+      if (customFood.startsWith(`${foodName}:`)) {
+        nextCustom = ''
+        setCustomFood('')
+      }
+    }
+
+    updateMealDraft(nextFood, nextCustom, selectedIntake)
   }
 
   function handleCustomFoodChange(text: string) {
@@ -326,28 +417,76 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
                 <span className="step-badge">1</span>
                 <span>{t.mealStep1Food}</span>
               </div>
+
+              {todaysMenu && (
+                <div className="menu-today-banner">
+                  <div className="menu-today-header">
+                    <span className="menu-today-title">
+                      📋 <strong>{t.todaysMenuTitle}</strong> ({lang === 'sq' ? (activeDayOfWeek === 'monday' ? 'E hënë' : activeDayOfWeek === 'tuesday' ? 'E martë' : activeDayOfWeek === 'wednesday' ? 'E mërkurë' : activeDayOfWeek === 'thursday' ? 'E enjte' : 'E premte') : (activeDayOfWeek ? activeDayOfWeek.charAt(0).toUpperCase() + activeDayOfWeek.slice(1) : '')}):
+                    </span>
+                    <span className="menu-today-hint">{t.clickToFillMenu}</span>
+                  </div>
+                  <div className="menu-today-items">
+                    {todaysMenu.breakfast && (
+                      <button
+                        type="button"
+                        className={`menu-today-chip ${selectedFood === t.mealBreakfast ? 'is-active' : ''}`}
+                        onClick={() => handleFoodSelect(t.mealBreakfast)}
+                        title={t.clickToFillMenu}
+                      >
+                        <span className="menu-chip-badge">🥣 {t.mealBreakfast}:</span>
+                        <span className="menu-chip-text">{localizeDish(todaysMenu.breakfast, lang)}</span>
+                      </button>
+                    )}
+                    {todaysMenu.lunch && (
+                      <button
+                        type="button"
+                        className={`menu-today-chip ${selectedFood === t.mealLunch ? 'is-active' : ''}`}
+                        onClick={() => handleFoodSelect(t.mealLunch)}
+                        title={t.clickToFillMenu}
+                      >
+                        <span className="menu-chip-badge">🍲 {t.mealLunch}:</span>
+                        <span className="menu-chip-text">{localizeDish(todaysMenu.lunch, lang)}</span>
+                      </button>
+                    )}
+                    {(todaysMenu.morningSnack || todaysMenu.afternoonSnack) && (
+                      <button
+                        type="button"
+                        className={`menu-today-chip ${selectedFood === t.mealSnack ? 'is-active' : ''}`}
+                        onClick={() => handleFoodSelect(t.mealSnack)}
+                        title={t.clickToFillMenu}
+                      >
+                        <span className="menu-chip-badge">🍎 {t.mealSnack}:</span>
+                        <span className="menu-chip-text">{localizeDish(todaysMenu.morningSnack || todaysMenu.afternoonSnack, lang)}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="meal-food-chips">
                 {[
-                  { label: t.mealBreakfast, icon: '🥣' },
-                  { label: t.mealLunch, icon: '🍲' },
-                  { label: t.mealSnack, icon: '🍎' },
-                  { label: t.mealAllMeals, icon: '🥣🍲🍎' },
-                  { label: t.mealDishSoup, icon: '🥗' },
-                  { label: t.mealDishMain, icon: '🍝' },
-                  { label: t.mealDishBread, icon: '🥪' },
-                  { label: t.mealDishFruit, icon: '🍌' },
+                  { label: t.mealBreakfast, icon: '🥣', hasMenu: Boolean(todaysMenu?.breakfast) },
+                  { label: t.mealLunch, icon: '🍲', hasMenu: Boolean(todaysMenu?.lunch) },
+                  { label: t.mealSnack, icon: '🍎', hasMenu: Boolean(todaysMenu?.morningSnack || todaysMenu?.afternoonSnack) },
+                  { label: t.mealAllMeals, icon: '🥣🍲🍎', hasMenu: Boolean(todaysMenu?.breakfast || todaysMenu?.lunch) },
+                  { label: t.mealDishSoup, icon: '🥗', hasMenu: false },
+                  { label: t.mealDishMain, icon: '🍝', hasMenu: false },
+                  { label: t.mealDishBread, icon: '🥪', hasMenu: false },
+                  { label: t.mealDishFruit, icon: '🍌', hasMenu: false },
                 ].map((item) => {
                   const isSelected = selectedFood === item.label
                   return (
                     <button
                       key={item.label}
                       type="button"
-                      className={`meal-chip ${isSelected ? 'active' : ''}`}
+                      className={`meal-chip ${isSelected ? 'active' : ''} ${item.hasMenu ? 'has-menu-link' : ''}`}
                       aria-pressed={isSelected}
                       onClick={() => handleFoodSelect(item.label)}
                     >
                       <span className="chip-icon">{item.icon}</span>
                       <span>{item.label}</span>
+                      {item.hasMenu && <span className="menu-link-dot" title={t.connectedToMenu} aria-hidden="true">•</span>}
                     </button>
                   )
                 })}
@@ -361,6 +500,21 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
                   onChange={(e) => handleCustomFoodChange(e.target.value)}
                   aria-label={t.presetMealsCustom}
                 />
+                {customFood && (
+                  <div className="custom-input-meta">
+                    <small className="menu-autofill-hint">
+                      💡 {customFood.includes(': ') ? t.filledFromMenu : t.presetMealsCustom}
+                    </small>
+                    <button
+                      type="button"
+                      className="text-btn clear-custom-btn"
+                      onClick={() => handleCustomFoodChange('')}
+                      title={t.clearMealSelection}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
