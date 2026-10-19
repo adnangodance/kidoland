@@ -1,0 +1,24 @@
+services:
+  kidoland:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kidoland:latest
+    container_name: kidoland-app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-4000}:4000"
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - HOST=0.0.0.0
+      - JWT_SECRET=${JWT_SECRET}
+      - KIDOLAND_DB_PATH=/data/kidoland.sqlite
+      - CORS_ORIGIN=${CORS_ORIGIN:-}
+      - SEED_DEMO_DATA=${SEED_DEMO_DATA:-false}
+    volumes:
+      - kidoland-data:/data
+
+volumes:
+  kidoland-data:
+    driver: local
