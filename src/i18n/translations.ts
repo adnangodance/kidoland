@@ -1056,7 +1056,7 @@ export const translations = {
     mealStep2Intake: 'Hapi 2: Sa / si e hëngri ushqimin?',
     mealBreakfast: 'Mëngjesi',
     mealLunch: 'Dreka',
-    mealSnack: 'Zemra (Pema)',
+    mealSnack: 'Zemra',
     mealAllMeals: 'Të gjitha vaktet',
     mealDishSoup: 'Supë & sallatë',
     mealDishMain: 'Gjellë kryesore & makarona',

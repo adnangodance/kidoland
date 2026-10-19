@@ -88,7 +88,16 @@ export default function Absences() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!token || saving) return
-    const activeChildId = draft.childId || children[0]?.id || ''
+    let activeChildId = draft.childId || children[0]?.id || ''
+    if (!activeChildId) {
+      try {
+        const { children: fresh } = await listChildren(token)
+        if (fresh[0]) {
+          activeChildId = fresh[0].id
+          setChildren(fresh)
+        }
+      } catch {}
+    }
     if (!activeChildId || !validDate(draft.startDate) || !validDate(draft.endDate)) {
       setSaveError(t.attendanceInvalidDate)
       return

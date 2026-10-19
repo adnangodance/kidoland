@@ -297,6 +297,7 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
     generation.current++
     setReports([]); setDraft(empty); setSaved(false); setError(''); setImageError(''); setLoading(true)
     if (fileInputRef.current) fileInputRef.current.value = ''
+    setShowCustomInput(false)
     setChildId(nextChild); setDate(nextDate)
   }
   function handleImage(e: React.ChangeEvent<HTMLInputElement>) {
@@ -408,230 +409,283 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
       <h2 className="form-section-title">{t.reportDetails}</h2>
       {reports.length > 0 && <p>{t.reportCorrection}</p>}
       <fieldset disabled={busy}>
-        <div className="editor-section">
-          <h3><span>01</span>{t.reportBasics}</h3>
-          
-          <div className="report-basics">
+        <div className="editor-section report-daily-care-section">
+          <div className="section-header-compact">
+            <h3><span>01</span>{t.reportBasics}</h3>
+            <span className="section-subtitle-tag">{lang === 'sq' ? 'Kujdesi ditor' : 'Daily care'}</span>
+          </div>
+
+          {/* Accessible hidden selects for test parity and form submission */}
+          <div className="report-basics-hidden" aria-hidden="true">
             {(['mood', 'meals', 'nap'] as const).map((field) => (
               <label key={field}>
                 {t[({ mood: 'reportsMood', meals: 'reportsMeals', nap: 'reportsNap' } as const)[field]]}
-                <select required value={draft[field]} onChange={(e) => { setSaved(false); setDraft({ ...draft, [field]: e.target.value }) }}>
+                <select
+                  required
+                  value={draft[field]}
+                  onChange={(e) => {
+                    setSaved(false)
+                    setDraft((prev) => ({ ...prev, [field]: e.target.value }))
+                  }}
+                >
                   <option key="" value="">{t.choose}</option>
-                  {draft[field] && !options[field].some(([code]) => code === draft[field]) && <option key="__custom__" value={draft[field]}>{translated(draft[field])}</option>}
-                  {options[field].map(([code, key]) => <option key={code} value={code}>{t[key]}</option>)}
+                  {draft[field] && !options[field].some(([code]) => code === draft[field]) && (
+                    <option key="__custom__" value={draft[field]}>{translated(draft[field])}</option>
+                  )}
+                  {options[field].map(([code, key]) => (
+                    <option key={code} value={code}>{t[key]}</option>
+                  ))}
                 </select>
               </label>
             ))}
           </div>
 
-          <div className="quick-mood-wrap">
-            <span className="quick-field-label">😊 {t.reportsMood}:</span>
-            <div className="mood-quick-pills" role="group" aria-label={t.reportsMood}>
-              {options.mood.map(([code, key]) => {
-                const isSelected = draft.mood === code
-                const emojis: Record<string, string> = { 'mood:happy': '😊', 'mood:calm': '😌', 'mood:tired': '🥱', 'mood:upset': '😢' }
-                return (
-                  <button
-                    key={code}
-                    type="button"
-                    className={`choice-pill mood-pill ${isSelected ? 'active' : ''}`}
-                    aria-pressed={isSelected}
-                    onClick={() => { setSaved(false); setDraft({ ...draft, mood: code }) }}
-                  >
-                    <span className="choice-emoji">{emojis[code]}</span>
-                    <span>{t[key]}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* 2-Step Meal Composer */}
-          <div className="meal-composer-card">
-            <div className="meal-composer-title">
-              <span className="meal-card-icon">🍎</span>
-              <div>
-                <strong>{t.reportsMeals}</strong>
-                <p>{lang === 'sq' ? 'Zgjidhni fillimisht çfarë hëngri fëmija, pastaj vlerësoni oreksin' : 'First select what was eaten, then evaluate appetite'}</p>
-              </div>
-            </div>
-
-            {/* Step 1: What did they eat? */}
-            <div className="meal-step-box">
-              <div className="meal-step-header">
-                <span className="step-badge">1</span>
-                <span>{t.mealStep1Food}</span>
-              </div>
-
-              {todaysMenu && (
-                <div className="menu-today-banner">
-                  <div className="menu-today-header">
-                    <span className="menu-today-title">
-                      📋 <strong>{t.todaysMenuTitle}</strong> ({lang === 'sq' ? (activeDayOfWeek === 'monday' ? 'E hënë' : activeDayOfWeek === 'tuesday' ? 'E martë' : activeDayOfWeek === 'wednesday' ? 'E mërkurë' : activeDayOfWeek === 'thursday' ? 'E enjte' : 'E premte') : (activeDayOfWeek ? activeDayOfWeek.charAt(0).toUpperCase() + activeDayOfWeek.slice(1) : '')}):
-                    </span>
-                    <span className="menu-today-hint">{t.clickToFillMenu}</span>
-                  </div>
-                  <div className="menu-today-items">
-                    {todaysMenu.breakfast && (
-                      <button
-                        type="button"
-                        className={`menu-today-chip ${selectedFood === t.mealBreakfast ? 'is-active' : ''}`}
-                        onClick={() => handleFoodSelect(t.mealBreakfast)}
-                        title={t.clickToFillMenu}
-                      >
-                        <span className="menu-chip-badge">🥣 {t.mealBreakfast}:</span>
-                        <span className="menu-chip-text">{localizeDish(todaysMenu.breakfast, lang)}</span>
-                      </button>
-                    )}
-                    {todaysMenu.lunch && (
-                      <button
-                        type="button"
-                        className={`menu-today-chip ${selectedFood === t.mealLunch ? 'is-active' : ''}`}
-                        onClick={() => handleFoodSelect(t.mealLunch)}
-                        title={t.clickToFillMenu}
-                      >
-                        <span className="menu-chip-badge">🍲 {t.mealLunch}:</span>
-                        <span className="menu-chip-text">{localizeDish(todaysMenu.lunch, lang)}</span>
-                      </button>
-                    )}
-                    {(todaysMenu.morningSnack || todaysMenu.afternoonSnack) && (
-                      <button
-                        type="button"
-                        className={`menu-today-chip ${selectedFood === t.mealSnack ? 'is-active' : ''}`}
-                        onClick={() => handleFoodSelect(t.mealSnack)}
-                        title={t.clickToFillMenu}
-                      >
-                        <span className="menu-chip-badge">🍎 {t.mealSnack}:</span>
-                        <span className="menu-chip-text">{localizeDish(todaysMenu.morningSnack || todaysMenu.afternoonSnack, lang)}</span>
-                      </button>
-                    )}
-                  </div>
+          <div className="daily-care-cards-stack">
+            {/* Card 1: Mood */}
+            <div className="daily-care-card mood-care-card">
+              <div className="care-card-header">
+                <span className="care-card-icon" aria-hidden="true">😊</span>
+                <div className="care-card-title-group">
+                  <strong className="care-card-title">{t.reportsMood}</strong>
+                  <span className="care-card-subtitle">{lang === 'sq' ? 'Si ndihet fëmija sot?' : 'How is the child feeling today?'}</span>
                 </div>
-              )}
-
-              <div className="meal-food-chips">
-                {[
-                  { label: t.mealBreakfast, icon: '🥣', hasMenu: Boolean(todaysMenu?.breakfast) },
-                  { label: t.mealLunch, icon: '🍲', hasMenu: Boolean(todaysMenu?.lunch) },
-                  { label: t.mealSnack, icon: '🍎', hasMenu: Boolean(todaysMenu?.morningSnack || todaysMenu?.afternoonSnack) },
-                  { label: t.mealAllMeals, icon: '🥣🍲🍎', hasMenu: Boolean(todaysMenu?.breakfast || todaysMenu?.lunch) },
-                  { label: t.mealDishSoup, icon: '🥗', hasMenu: false },
-                  { label: t.mealDishMain, icon: '🍝', hasMenu: false },
-                  { label: t.mealDishBread, icon: '🥪', hasMenu: false },
-                  { label: t.mealDishFruit, icon: '🍌', hasMenu: false },
-                ].map((item) => {
-                  const isSelected = selectedFood === item.label
+              </div>
+              <div className="care-choice-grid mood-grid" role="group" aria-label={t.reportsMood}>
+                {options.mood.map(([code, key]) => {
+                  const isSelected = draft.mood === code
+                  const emojis: Record<string, string> = { 'mood:happy': '😊', 'mood:calm': '😌', 'mood:tired': '🥱', 'mood:upset': '😢' }
                   return (
                     <button
-                      key={item.label}
+                      key={code}
                       type="button"
-                      className={`meal-chip ${isSelected ? 'active' : ''} ${item.hasMenu ? 'has-menu-link' : ''}`}
+                      className={`care-choice-btn mood-btn ${isSelected ? 'active' : ''}`}
                       aria-pressed={isSelected}
-                      onClick={() => handleFoodSelect(item.label)}
+                      onClick={() => { setSaved(false); setDraft((prev) => ({ ...prev, mood: code })) }}
                     >
-                      <span className="chip-icon">{item.icon}</span>
-                      <span>{item.label}</span>
-                      {item.hasMenu && <span className="menu-link-dot" title={t.connectedToMenu} aria-hidden="true">•</span>}
+                      <span className="choice-indicator" aria-hidden="true" />
+                      <span className="care-btn-emoji">{emojis[code]}</span>
+                      <span className="care-btn-label">{t[key]}</span>
                     </button>
                   )
                 })}
               </div>
-              <div className="meal-custom-wrap">
-                <input
-                  type="text"
-                  className="meal-custom-input"
-                  placeholder={t.mealCustomFoodPlaceholder}
-                  value={customFood}
-                  onChange={(e) => handleCustomFoodChange(e.target.value)}
-                  aria-label={t.presetMealsCustom}
-                />
-                {customFood && (
-                  <div className="custom-input-meta">
-                    <small className="menu-autofill-hint">
-                      💡 {customFood.includes(': ') ? t.filledFromMenu : t.presetMealsCustom}
-                    </small>
+            </div>
+
+            {/* Card 2: Unified Meal Composer (Brightwheel & Famly pattern) */}
+            <div className="daily-care-card meal-care-card">
+              <div className="care-card-header">
+                <span className="care-card-icon" aria-hidden="true">🍽️</span>
+                <div className="care-card-title-group">
+                  <div className="care-card-title-row">
+                    <strong className="care-card-title">{t.reportsMeals}</strong>
+                    {todaysMenu && (
+                      <span className="menu-active-pill" title={t.connectedToMenu}>
+                        ✓ {t.connectedToMenu}
+                      </span>
+                    )}
+                  </div>
+                  <span className="care-card-subtitle">
+                    {lang === 'sq' ? 'Zgjidhni vaktin dhe sa hëngri fëmija (me 2 prekje të shpejta)' : 'Select meal course and portion eaten (in 2 quick taps)'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Course Tabs: Breakfast / Lunch / Snack / All */}
+              <div className="meal-course-tabs" role="tablist" aria-label={t.reportsMeals}>
+                {(['breakfast', 'lunch', 'snack', 'all'] as const).map((courseKey) => {
+                  const isCurrent = activeCourse === courseKey
+                  const courseIcons = { breakfast: '🥣', lunch: '🍲', snack: '🍎', all: '🍽️' }
+                  const courseLabels = {
+                    breakfast: t.mealBreakfast,
+                    lunch: t.mealLunch,
+                    snack: t.mealSnack,
+                    all: t.mealAllMeals,
+                  }
+                  return (
                     <button
+                      key={courseKey}
                       type="button"
-                      className="text-btn clear-custom-btn"
-                      onClick={() => handleCustomFoodChange('')}
-                      title={t.clearMealSelection}
+                      role="tab"
+                      aria-selected={isCurrent}
+                      className={`meal-course-tab ${isCurrent ? 'is-active' : ''}`}
+                      onClick={() => handleCourseSelect(courseKey)}
                     >
-                      ✕
+                      <span className="course-tab-icon">{courseIcons[courseKey]}</span>
+                      <span className="course-tab-name">{courseLabels[courseKey]}</span>
                     </button>
+                  )
+                })}
+              </div>
+
+              {/* Today's served dish badge & editor */}
+              <div className="course-menu-card">
+                {currentDishText || customFood ? (
+                  <div className="course-menu-content">
+                    <div className="course-menu-lead">
+                      <span className="course-menu-badge">
+                        📋 {todaysMenu && !customFood ? t.todaysMenuServed : (lang === 'sq' ? 'Ushqimi i përzgjedhur' : 'Selected food')}:
+                      </span>
+                      {!showCustomInput ? (
+                        <button
+                          type="button"
+                          className="btn-link-edit"
+                          onClick={() => setShowCustomInput(true)}
+                        >
+                          ✏️ {t.customMealToggle}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn-link-edit"
+                          onClick={() => {
+                            setCustomFood('')
+                            setShowCustomInput(false)
+                            if (selectedIntake) {
+                              applyMealUpdate(activeCourse, '', selectedIntake)
+                            }
+                          }}
+                        >
+                          ✕ {lang === 'sq' ? 'Kthe te menuja' : 'Use menu'}
+                        </button>
+                      )}
+                    </div>
+
+                    {!showCustomInput ? (
+                      <div className="served-dish-display">
+                        <span className="served-dish-icon">
+                          {activeCourse === 'breakfast' ? '🥣' : activeCourse === 'lunch' ? '🍲' : activeCourse === 'snack' ? '🍎' : '🍽️'}
+                        </span>
+                        <span className="served-dish-title">
+                          {customFood || currentDishText}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="custom-dish-box">
+                        <input
+                          type="text"
+                          className="custom-dish-input"
+                          placeholder={t.mealCustomFoodPlaceholder}
+                          value={customFood}
+                          onChange={(e) => handleCustomFoodChange(e.target.value)}
+                          aria-label={t.presetMealsCustom}
+                        />
+                        <div className="custom-tags-row">
+                          <span className="custom-tags-label">{lang === 'sq' ? 'Sugjerime të shpejta:' : 'Quick tags:'}</span>
+                          {[
+                            { label: t.mealDishSoup, icon: '🥗' },
+                            { label: t.mealDishMain, icon: '🍝' },
+                            { label: t.mealDishBread, icon: '🥪' },
+                            { label: t.mealDishFruit, icon: '🍌' },
+                          ].map((tag) => (
+                            <button
+                              key={tag.label}
+                              type="button"
+                              className="quick-tag-chip"
+                              onClick={() => handleTagClick(tag.label)}
+                            >
+                              <span>{tag.icon}</span> {tag.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="course-no-menu-content">
+                    <input
+                      type="text"
+                      className="custom-dish-input"
+                      placeholder={t.mealCustomFoodPlaceholder}
+                      value={customFood}
+                      onChange={(e) => handleCustomFoodChange(e.target.value)}
+                      aria-label={t.presetMealsCustom}
+                    />
                   </div>
                 )}
               </div>
+
+              {/* Portion scale selector (2nd tap) */}
+              <div className="portion-scale-section">
+                <span className="portion-scale-heading">
+                  {t.portionLabel}
+                </span>
+                <div className="portion-scale-grid" role="group" aria-label={t.portionLabel}>
+                  {[
+                    { key: 'intake:very_well', label: t.mealIntakeVeryWell, pct: '100%', icon: '🌟', tone: 'great' },
+                    { key: 'intake:well', label: t.mealIntakeWell, pct: '75%', icon: '👍', tone: 'good' },
+                    { key: 'intake:some', label: t.mealIntakeSome, pct: '50%', icon: '🤏', tone: 'moderate' },
+                    { key: 'intake:little', label: t.mealIntakeLittle, pct: '<25%', icon: '⚠️', tone: 'little' },
+                  ].map((item) => {
+                    const isSelected = selectedIntake === item.key
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        className={`portion-card-btn ${item.tone} ${isSelected ? 'active' : ''}`}
+                        aria-pressed={isSelected}
+                        onClick={() => handleIntakeSelect(item.key)}
+                      >
+                        <div className="portion-card-top">
+                          <span className="portion-card-icon">{item.icon}</span>
+                          <span className="portion-card-pct">{item.pct}</span>
+                        </div>
+                        <div className="portion-card-bottom">
+                          <span className="portion-radio-ring" aria-hidden="true" />
+                          <span className="portion-card-name">{item.label}</span>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Active selection preview bar */}
+              {draft.meals && (
+                <div className="meal-preview-bar">
+                  <div className="meal-preview-text">
+                    <span className="preview-indicator">✓</span>
+                    <span><strong>{t.reportsMeals}:</strong> {translated(draft.meals)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="clear-meal-btn"
+                    onClick={clearMeals}
+                    title={t.clearMealSelection}
+                  >
+                    ✕ {t.clearMealSelection}
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Step 2: How well did they eat? */}
-            <div className="meal-step-box" style={{ marginTop: '12px' }}>
-              <div className="meal-step-header">
-                <span className="step-badge">2</span>
-                <span>{t.mealStep2Intake}</span>
+            {/* Card 3: Nap */}
+            <div className="daily-care-card nap-care-card">
+              <div className="care-card-header">
+                <span className="care-card-icon" aria-hidden="true">😴</span>
+                <div className="care-card-title-group">
+                  <strong className="care-card-title">{t.reportsNap}</strong>
+                  <span className="care-card-subtitle">{lang === 'sq' ? 'Kohëzgjatja e pushimit ose gjumit' : 'Rest and nap duration today'}</span>
+                </div>
               </div>
-              <div className="meal-intake-chips">
-                {[
-                  { key: 'intake:very_well', label: t.mealIntakeVeryWell, icon: '🌟', tone: 'great' },
-                  { key: 'intake:well', label: t.mealIntakeWell, icon: '👍', tone: 'good' },
-                  { key: 'intake:some', label: t.mealIntakeSome, icon: '🤏', tone: 'moderate' },
-                  { key: 'intake:little', label: t.mealIntakeLittle, icon: '⚠️', tone: 'little' },
-                ].map((item) => {
-                  const isSelected = selectedIntake === item.key
+              <div className="care-choice-grid nap-grid" role="group" aria-label={t.reportsNap}>
+                {options.nap.map(([code, key]) => {
+                  const isSelected = draft.nap === code
+                  const emojis: Record<string, string> = { 'nap:none': '⛔', 'nap:short': '⏱️', 'nap:long': '💤' }
                   return (
                     <button
-                      key={item.key}
+                      key={code}
                       type="button"
-                      className={`intake-btn ${item.tone} ${isSelected ? 'active' : ''}`}
+                      className={`care-choice-btn nap-btn ${isSelected ? 'active' : ''}`}
                       aria-pressed={isSelected}
-                      onClick={() => handleIntakeSelect(item.key)}
+                      onClick={() => { setSaved(false); setDraft((prev) => ({ ...prev, nap: code })) }}
                     >
-                      <span className="intake-radio-dot" aria-hidden="true" />
-                      <span className="intake-icon">{item.icon}</span>
-                      <span className="intake-label">{item.label}</span>
+                      <span className="choice-indicator" aria-hidden="true" />
+                      <span className="care-btn-emoji">{emojis[code]}</span>
+                      <span className="care-btn-label">{t[key]}</span>
                     </button>
                   )
                 })}
               </div>
-            </div>
-
-            {draft.meals && (
-              <div className="meal-preview-bar">
-                <span>🍽️ <strong>{t.reportsMeals}:</strong> {translated(draft.meals)}</span>
-                <button
-                  type="button"
-                  className="btn ghost text-btn"
-                  onClick={() => {
-                    setSelectedFood('')
-                    setCustomFood('')
-                    setSelectedIntake('')
-                    setDraft((d) => ({ ...d, meals: '' }))
-                  }}
-                >
-                  ✕ {t.clearMealSelection}
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="quick-nap-wrap">
-            <span className="quick-field-label">😴 {t.reportsNap}:</span>
-            <div className="nap-quick-pills" role="group" aria-label={t.reportsNap}>
-              {options.nap.map(([code, key]) => {
-                const isSelected = draft.nap === code
-                const emojis: Record<string, string> = { 'nap:none': '⛔', 'nap:short': '⏱️', 'nap:long': '💤' }
-                return (
-                  <button
-                    key={code}
-                    type="button"
-                    className={`choice-pill nap-pill ${isSelected ? 'active' : ''}`}
-                    aria-pressed={isSelected}
-                    onClick={() => { setSaved(false); setDraft({ ...draft, nap: code }) }}
-                  >
-                    <span className="choice-emoji">{emojis[code]}</span>
-                    <span>{t[key]}</span>
-                  </button>
-                )
-              })}
             </div>
           </div>
         </div>
