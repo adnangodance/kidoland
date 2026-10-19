@@ -120,7 +120,7 @@ export async function listStaff(token: string) {
   return api<{ staff: User[] }>('/api/staff', {}, token)
 }
 
-export async function createStaff(token: string, body: { name: string; email: string; password: string; role: 'teacher' | 'director' }) {
+export async function createStaff(token: string, body: { name: string; email: string; password: string; role: 'teacher' | 'director' | 'superadmin' }) {
   return api<{ staff: User }>('/api/staff', { method: 'POST', body: JSON.stringify(body) }, token)
 }
 

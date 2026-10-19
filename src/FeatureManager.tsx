@@ -218,7 +218,7 @@ const MODULES_REGISTRY: FeatureItem[] = [
 ]
 
 export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?: () => void } = {}) {
-  const { token } = useAuth()
+  const { token, user } = useAuth()
   const { t, lang } = useI18n()
   const alive = useRef(true)
 
@@ -236,7 +236,7 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
 
   const [activeTab, setActiveTab] = useState<'modules' | 'accounts'>('modules')
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [createRole, setCreateRole] = useState<'teacher' | 'director' | 'parent'>('teacher')
+  const [createRole, setCreateRole] = useState<'teacher' | 'director' | 'parent' | 'superadmin'>('teacher')
   const [createName, setCreateName] = useState('')
   const [createEmail, setCreateEmail] = useState('')
   const [createPassword, setCreatePassword] = useState('')
@@ -246,7 +246,7 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
 
   const [users, setUsers] = useState<User[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
-  const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'director' | 'teacher' | 'parent'>('all')
+  const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'director' | 'teacher' | 'parent' | 'superadmin'>('all')
   const [userSearch, setUserSearch] = useState('')
   const [resetTarget, setResetTarget] = useState<User | null>(null)
   const [newPasswordVal, setNewPasswordVal] = useState('')
@@ -589,6 +589,13 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
               >
                 {t.roleParent}
               </button>
+              <button
+                type="button"
+                className={`filter-btn ${userRoleFilter === 'superadmin' ? 'active' : ''}`}
+                onClick={() => setUserRoleFilter('superadmin')}
+              >
+                {t.roleSuperAdmin}
+              </button>
             </div>
             <input
               type="search"
@@ -830,12 +837,13 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
                 <select
                   id="modal-create-role"
                   value={createRole}
-                  onChange={(e) => setCreateRole(e.target.value as 'teacher' | 'director' | 'parent')}
+                  onChange={(e) => setCreateRole(e.target.value as 'teacher' | 'director' | 'parent' | 'superadmin')}
                   style={{ width: '100%', boxSizing: 'border-box' }}
                 >
                   <option value="teacher">{t.roleTeacher} (Edukator)</option>
                   <option value="director">{t.roleDirector} (Drejtor)</option>
                   <option value="parent">{t.roleParent} (Prind)</option>
+                  {user?.role === 'superadmin' && <option value="superadmin">{t.roleSuperAdmin} (Super Admin)</option>}
                 </select>
               </div>
               <div className="form-field">

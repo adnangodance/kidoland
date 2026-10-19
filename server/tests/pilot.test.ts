@@ -1807,7 +1807,7 @@ test('staff and user management: list staff, create teachers, and reset password
     assert.equal(createRes.data.staff.role, 'teacher')
     assert.equal(createRes.data.staff.email, 'valbona.test@kidoland.demo')
 
-    // 4. Director cannot create a director
+    // 4. Director cannot create a director or superadmin
     const badDirectorRes = await f.request('staff', director, {
       name: 'Second Director',
       email: 'director2@kidoland.demo',
@@ -1815,6 +1815,34 @@ test('staff and user management: list staff, create teachers, and reset password
       role: 'director',
     })
     assert.equal(badDirectorRes.status, 403)
+
+    const badAdminRes = await f.request('staff', director, {
+      name: 'Forbidden Admin',
+      email: 'admin.forbidden@kidoland.demo',
+      password: 'password123',
+      role: 'superadmin',
+    })
+    assert.equal(badAdminRes.status, 403)
+
+    // Superadmin can create director and superadmin
+    const superadmin = await f.login('admin')
+    const createdDirector = await f.request('staff', superadmin, {
+      name: 'Official Director',
+      email: 'director.official@kidoland.demo',
+      password: 'password123',
+      role: 'director',
+    })
+    assert.equal(createdDirector.status, 201)
+    assert.equal(createdDirector.data.staff.role, 'director')
+
+    const createdAdmin = await f.request('staff', superadmin, {
+      name: 'Second Admin',
+      email: 'admin2@kidoland.demo',
+      password: 'password123',
+      role: 'superadmin',
+    })
+    assert.equal(createdAdmin.status, 201)
+    assert.equal(createdAdmin.data.staff.role, 'superadmin')
 
     // 5. Created teacher can log in
     const teacherLogin = await f.request('auth/login', undefined, {

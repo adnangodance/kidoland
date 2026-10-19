@@ -742,13 +742,14 @@ const staffSchema = z.object({
   name: z.string().trim().min(1).max(200),
   email: z.string().trim().email().max(254),
   password: z.string().min(6).refine((value) => Buffer.byteLength(value, 'utf8') <= 72),
-  role: z.enum(['teacher', 'director']),
+  role: z.enum(['teacher', 'director', 'superadmin']),
 }).strict()
 
 app.get('/api/staff', requireAuth, (req, res) => {
   const caller = authed(req)
   if (caller.role !== 'director' && caller.role !== 'superadmin') return res.status(403).json({ error: 'forbidden' })
-  const staff = db.prepare("SELECT id, name, email, role FROM users WHERE role IN ('teacher', 'director') ORDER BY role, name").all()
+  const roles = caller.role === 'superadmin' ? "('teacher', 'director', 'superadmin')" : "('teacher', 'director')"
+  const staff = db.prepare(`SELECT id, name, email, role FROM users WHERE role IN ${roles} ORDER BY role, name`).all()
   res.json({ staff })
 })
 
@@ -758,7 +759,7 @@ app.post('/api/staff', requireAuth, (req, res) => {
   const parsed = staffSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body' })
   const body = parsed.data
-  if (caller.role === 'director' && body.role === 'director') {
+  if (caller.role === 'director' && (body.role === 'director' || body.role === 'superadmin')) {
     return res.status(403).json({ error: 'forbidden' })
   }
   if (db.prepare('SELECT id FROM users WHERE lower(email) = lower(?)').get(body.email)) {

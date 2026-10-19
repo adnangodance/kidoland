@@ -458,9 +458,9 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
           {busy ? t.attendanceSaving : t.loginSubmit}
         </button>
       </form>
-      <p className="hint">{t.loginHint}</p>
       {SHOW_DEMO && (
         <div className="demo-accounts">
+          <p className="hint">{t.loginHint}</p>
           {DEMO.map((d) => (
             <button
               key={d.email}
@@ -477,6 +477,13 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
           ))}
         </div>
       )}
+      <div className="login-help-card" style={{ marginTop: '20px', padding: '14px 16px', borderRadius: '10px', background: 'var(--kd-surface-alt, #f7faf5)', border: '1px solid var(--kd-border, #e2ead6)', fontSize: '13px', color: 'var(--kd-muted, #556b5b)', lineHeight: '1.45', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
+        <p style={{ margin: 0, fontWeight: 600, color: 'var(--kd-text, #26382b)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Icon name="children" size={16} />
+          {t.parentAccessNotice}
+        </p>
+        <p style={{ margin: '6px 0 0', fontSize: '12px' }}>{t.parentAccessContact}</p>
+      </div>
     </div></section>
   )
 }
