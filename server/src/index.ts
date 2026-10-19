@@ -5,10 +5,12 @@ import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
+import os from 'node:os'
+import Database from 'better-sqlite3'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { db, localCalendarDate, ALL_FEATURES, getRoleFeaturePermissions, setRoleFeaturePermission, resetRoleFeaturePermissions, type DbUser, type DbChildSleepLog, type DbChildMedication, type DbChildHygieneLog } from './db.js'
+import { db, dbPath, localCalendarDate, ALL_FEATURES, getRoleFeaturePermissions, setRoleFeaturePermission, resetRoleFeaturePermissions, type DbUser, type DbChildSleepLog, type DbChildMedication, type DbChildHygieneLog } from './db.js'
 import { requireAuth, signToken, type AuthUser } from './auth.js'
 
 export const app = express()
@@ -3626,6 +3628,59 @@ app.post('/api/admin/features/reset', requireAuth, (req, res) => {
     success: true,
     permissions: getRoleFeaturePermissions(),
   })
+})
+
+app.get('/api/admin/backup', requireAuth, async (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'superadmin') return res.status(403).json({ error: 'forbidden' })
+
+  const tempBackupPath = path.join(os.tmpdir(), `kidoland-backup-${Date.now()}-${randomUUID()}.sqlite`)
+  try {
+    try { db.pragma('wal_checkpoint(TRUNCATE)') } catch {}
+    await db.backup(tempBackupPath)
+    const dateStr = new Date().toISOString().slice(0, 10)
+    res.download(tempBackupPath, `kidoland-backup-${dateStr}.sqlite`, () => {
+      try {
+        if (fs.existsSync(tempBackupPath)) fs.unlinkSync(tempBackupPath)
+      } catch {}
+    })
+  } catch (err: any) {
+    try { if (fs.existsSync(tempBackupPath)) fs.unlinkSync(tempBackupPath) } catch {}
+    res.status(500).json({ error: 'backup_failed', message: err?.message || 'Failed to create backup' })
+  }
+})
+
+app.post('/api/admin/restore', requireAuth, express.raw({ type: '*/*', limit: '50mb' }), async (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'superadmin') return res.status(403).json({ error: 'forbidden' })
+
+  const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || '')
+  if (buffer.length < 100 || buffer.subarray(0, 16).toString('utf8') !== 'SQLite format 3\0') {
+    return res.status(400).json({ error: 'invalid_database_file', message: 'Uploaded file is not a valid SQLite database' })
+  }
+
+  const tempRestorePath = path.join(os.tmpdir(), `kidoland-restore-${Date.now()}-${randomUUID()}.sqlite`)
+  try {
+    fs.writeFileSync(tempRestorePath, buffer)
+    const testDb = new Database(tempRestorePath, { readonly: true })
+    const integrity = testDb.pragma('integrity_check') as [{ integrity_check: string }]
+    testDb.close()
+    if (!integrity || integrity[0]?.integrity_check !== 'ok') {
+      try { fs.unlinkSync(tempRestorePath) } catch {}
+      return res.status(400).json({ error: 'corrupt_database', message: 'Integrity check failed on uploaded database' })
+    }
+
+    const backupSrc = new Database(tempRestorePath, { readonly: true })
+    await backupSrc.backup(dbPath)
+    backupSrc.close()
+
+    try { db.pragma('wal_checkpoint(TRUNCATE)') } catch {}
+    try { fs.unlinkSync(tempRestorePath) } catch {}
+    res.json({ ok: true, message: 'Database restored successfully' })
+  } catch (err: any) {
+    try { if (fs.existsSync(tempRestorePath)) fs.unlinkSync(tempRestorePath) } catch {}
+    res.status(500).json({ error: 'restore_failed', message: err?.message || 'Failed to restore database' })
+  }
 })
 
 app.get('/api/dashboard', requireAuth, (req, res) => {

@@ -12,6 +12,8 @@ import {
   createStaff,
   createParent,
   resetUserPassword,
+  downloadDatabaseBackup,
+  restoreDatabaseBackup,
   type FeaturePermissionMap,
   type FeatureRole,
   type User,
@@ -234,7 +236,12 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const [activeTab, setActiveTab] = useState<'modules' | 'accounts'>('modules')
+  const [activeTab, setActiveTab] = useState<'modules' | 'accounts' | 'backups'>('modules')
+  const [backupBusy, setBackupBusy] = useState(false)
+  const [restoreBusy, setRestoreBusy] = useState(false)
+  const [selectedBackupFile, setSelectedBackupFile] = useState<File | null>(null)
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false)
+  const [restoreStatus, setRestoreStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [createRole, setCreateRole] = useState<'teacher' | 'director' | 'parent' | 'superadmin'>('teacher')
   const [createName, setCreateName] = useState('')
@@ -383,6 +390,48 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
       if (alive.current) {
         setResetBusy(false)
       }
+    }
+  }
+
+  const handleDownloadBackup = async () => {
+    if (!token || backupBusy) return
+    setBackupBusy(true)
+    setError(null)
+    setMessage(null)
+    try {
+      await downloadDatabaseBackup(token)
+      if (alive.current) {
+        setMessage(lang === 'sq' ? 'Kopja rezervë u shkarkua me sukses!' : 'Backup downloaded successfully!')
+      }
+    } catch {
+      if (alive.current) {
+        setError(lang === 'sq' ? 'Dështoi shkarkimi i kopjes rezervë.' : 'Failed to download backup.')
+      }
+    } finally {
+      if (alive.current) setBackupBusy(false)
+    }
+  }
+
+  const handleRestoreSubmit = async () => {
+    if (!token || !selectedBackupFile || restoreBusy) return
+    setRestoreBusy(true)
+    setRestoreStatus(null)
+    setShowRestoreConfirm(false)
+    try {
+      await restoreDatabaseBackup(token, selectedBackupFile)
+      if (alive.current) {
+        setRestoreStatus({ type: 'success', text: t.restoreSuccess })
+        setSelectedBackupFile(null)
+        setTimeout(() => {
+          window.location.reload()
+        }, 1500)
+      }
+    } catch {
+      if (alive.current) {
+        setRestoreStatus({ type: 'error', text: t.restoreError })
+      }
+    } finally {
+      if (alive.current) setRestoreBusy(false)
     }
   }
 
@@ -544,6 +593,14 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
         >
           {t.tabAccounts} {users.length > 0 ? `(${users.length})` : ''}
         </button>
+        <button
+          type="button"
+          className={`tab-btn ${activeTab === 'backups' ? 'active' : ''}`}
+          onClick={() => setActiveTab('backups')}
+          style={{ padding: '8px 16px', borderRadius: '6px 6px 0 0', cursor: 'pointer' }}
+        >
+          {t.backupTitle}
+        </button>
       </div>
 
       {error && (
@@ -641,6 +698,92 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
               ))}
             </div>
           )}
+        </section>
+      ) : activeTab === 'backups' ? (
+        <section className="backups-management-section" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="notice" style={{ background: 'var(--kd-surface-alt, #f7faf5)', border: '1px solid var(--kd-border, #e2ead6)', padding: '16px', borderRadius: '12px', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
+            <h3 style={{ margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px' }}>
+              <Icon name="documents" size={20} />
+              {t.backupTitle}
+            </h3>
+            <p style={{ margin: 0, color: 'var(--kd-muted)', fontSize: '13px', lineHeight: '1.5' }}>
+              {t.backupSubtitle}
+            </p>
+          </div>
+
+          {restoreStatus && (
+            <div
+              className={`notice ${restoreStatus.type === 'success' ? 'success-banner' : 'error-banner'}`}
+              role={restoreStatus.type === 'error' ? 'alert' : 'status'}
+              style={{ margin: 0 }}
+            >
+              {restoreStatus.type === 'success' ? '✓ ' : '⚠ '}
+              {restoreStatus.text}
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+            {/* Download Backup Card */}
+            <div className="panel" style={{ margin: 0, padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '16px', boxSizing: 'border-box' }}>
+              <div>
+                <h4 style={{ margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px' }}>
+                  <Icon name="arrow" size={18} />
+                  {lang === 'sq' ? 'Eksporto Kopjen Rezervë' : 'Export Full Backup'}
+                </h4>
+                <p style={{ margin: 0, color: 'var(--kd-muted)', fontSize: '13px', lineHeight: '1.45' }}>
+                  {lang === 'sq'
+                    ? 'Shkarkoni menjëherë një skedar të plotë .sqlite në kompjuterin tuaj. Përmban të gjithë nxënësit, stafin, prindërit, prezencën, ushqimin dhe faturat.'
+                    : 'Download an immediate .sqlite snapshot to your computer containing all students, staff, parents, attendance, meals, and invoices.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={backupBusy}
+                onClick={handleDownloadBackup}
+                style={{ width: '100%', boxSizing: 'border-box', justifyContent: 'center' }}
+              >
+                {backupBusy ? t.backupInProgress : t.downloadBackupBtn}
+              </button>
+            </div>
+
+            {/* Restore Card */}
+            <div className="panel" style={{ margin: 0, padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '16px', boxSizing: 'border-box' }}>
+              <div>
+                <h4 style={{ margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px' }}>
+                  <Icon name="clock" size={18} />
+                  {lang === 'sq' ? 'Rikthe nga Skedari' : 'Restore from Backup'}
+                </h4>
+                <p style={{ margin: 0, color: 'var(--kd-muted)', fontSize: '13px', lineHeight: '1.45' }}>
+                  {lang === 'sq'
+                    ? 'Ngarkoni një skedar .sqlite të shkarkuar më parë për të rikthyer të gjithë sistemin në atë pikë kohore.'
+                    : 'Upload a previously downloaded .sqlite file to restore all kindergarten records back to that point in time.'}
+                </p>
+                <div style={{ marginTop: '12px' }}>
+                  <input
+                    type="file"
+                    accept=".sqlite,application/x-sqlite3,application/octet-stream"
+                    disabled={restoreBusy}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null
+                      setSelectedBackupFile(file)
+                      setRestoreStatus(null)
+                    }}
+                    style={{ width: '100%', boxSizing: 'border-box', maxWidth: '100%', fontSize: '12px' }}
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={!selectedBackupFile || restoreBusy}
+                onClick={() => setShowRestoreConfirm(true)}
+                style={{ width: '100%', boxSizing: 'border-box', justifyContent: 'center' }}
+              >
+                {restoreBusy ? t.restoreInProgress : t.restoreBackupBtn}
+              </button>
+            </div>
+          </div>
         </section>
       ) : (
         <>
@@ -936,6 +1079,43 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Database Restore Confirmation Modal */}
+      {showRestoreConfirm && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setShowRestoreConfirm(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px', width: '100%', boxSizing: 'border-box' }}>
+            <div className="modal-header">
+              <h2>{t.restoreConfirmTitle}</h2>
+              <button type="button" className="btn-close" aria-label={t.cancel} onClick={() => setShowRestoreConfirm(false)}>✕</button>
+            </div>
+            <div style={{ margin: '14px 0', color: 'var(--kd-text)', fontSize: '13px', lineHeight: '1.5' }}>
+              <div className="notice error-banner" style={{ margin: '0 0 12px' }}>
+                ⚠ {t.restoreConfirmText}
+              </div>
+              {selectedBackupFile && (
+                <p style={{ margin: 0, fontSize: '12px', color: 'var(--kd-muted)' }}>
+                  {lang === 'sq' ? 'Skedari i përzgjedhur:' : 'Selected file:'}{' '}
+                  <strong>{selectedBackupFile.name}</strong> ({(selectedBackupFile.size / 1024).toFixed(1)} KB)
+                </p>
+              )}
+            </div>
+            <div className="modal-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
+              <button type="button" className="btn ghost" onClick={() => setShowRestoreConfirm(false)} disabled={restoreBusy}>
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                style={{ background: '#c53030', borderColor: '#c53030', color: '#fff' }}
+                onClick={handleRestoreSubmit}
+                disabled={restoreBusy}
+              >
+                {restoreBusy ? t.restoreInProgress : t.restoreConfirmAction}
+              </button>
+            </div>
           </div>
         </div>
       )}

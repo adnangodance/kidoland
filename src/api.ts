@@ -1511,3 +1511,42 @@ export type ChildProfileResponse = {
 export async function getChildProfile(childId: string, token: string, signal?: AbortSignal) {
   return api<ChildProfileResponse>(`/api/children/${encodeURIComponent(childId)}/profile`, { signal }, token)
 }
+
+export async function downloadDatabaseBackup(token: string) {
+  const deadline = AbortSignal.timeout(30_000)
+  const res = await fetch(`${API_URL}/api/admin/backup`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: deadline,
+  })
+  if (!res.ok) throw new ApiError('backup_download_failed', res.status)
+  const blob = await res.blob()
+  const disposition = res.headers.get('Content-Disposition') || ''
+  const filenameMatch = disposition.match(/filename="?([^";]+)"?/)
+  const filename = filenameMatch ? filenameMatch[1] : `kidoland-backup-${new Date().toISOString().slice(0, 10)}.sqlite`
+  const url = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  window.URL.revokeObjectURL(url)
+}
+
+export async function restoreDatabaseBackup(token: string, file: File | Blob) {
+  const deadline = AbortSignal.timeout(60_000)
+  const res = await fetch(`${API_URL}/api/admin/restore`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/octet-stream',
+    },
+    body: file,
+    signal: deadline,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new ApiError(data.error || 'restore_failed', res.status)
+  }
+  return data as { ok: boolean; message: string }
+}

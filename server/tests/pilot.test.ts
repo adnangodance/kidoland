@@ -1870,6 +1870,58 @@ test('staff and user management: list staff, create teachers, and reset password
   }
 })
 
+test('database backup and restore API: authorization, binary integrity check, and safe restore', async () => {
+  const f = await fixture()
+  try {
+    await f.start()
+    const base = f.getBase()
+    const director = await f.login('director')
+    const superadmin = await f.login('admin')
+
+    // 1. Director cannot backup or restore
+    const badBackup = await fetch(`${base}/api/admin/backup`, {
+      headers: { Authorization: `Bearer ${director}` },
+    })
+    assert.equal(badBackup.status, 403)
+
+    const badRestore = await fetch(`${base}/api/admin/restore`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${director}`, 'Content-Type': 'application/octet-stream' },
+      body: Buffer.from('not-a-db'),
+    })
+    assert.equal(badRestore.status, 403)
+
+    // 2. Superadmin downloads valid backup
+    const backupRes = await fetch(`${base}/api/admin/backup`, {
+      headers: { Authorization: `Bearer ${superadmin}` },
+    })
+    assert.equal(backupRes.status, 200)
+    const backupBuffer = Buffer.from(await backupRes.arrayBuffer())
+    assert.ok(backupBuffer.length > 512)
+    assert.equal(backupBuffer.subarray(0, 16).toString('utf8'), 'SQLite format 3\0')
+
+    // 3. Superadmin restore rejects corrupt file
+    const corruptRestore = await fetch(`${base}/api/admin/restore`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${superadmin}`, 'Content-Type': 'application/octet-stream' },
+      body: Buffer.from('corrupt SQLite file with some bytes'),
+    })
+    assert.equal(corruptRestore.status, 400)
+
+    // 4. Superadmin restores valid backup
+    const validRestore = await fetch(`${base}/api/admin/restore`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${superadmin}`, 'Content-Type': 'application/octet-stream' },
+      body: backupBuffer,
+    })
+    assert.equal(validRestore.status, 200)
+    const json = await validRestore.json() as { ok: boolean }
+    assert.equal(json.ok, true)
+  } finally {
+    await f.dispose()
+  }
+})
+
 
 
 

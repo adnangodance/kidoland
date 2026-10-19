@@ -1,0 +1,40 @@
+# fly.toml app configuration file for Kidoland
+# Guide: https://fly.io/docs/reference/configuration/
+
+app = "kidoland"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  HOST = "0.0.0.0"
+  PORT = "4000"
+  NODE_ENV = "production"
+  KIDOLAND_DB_PATH = "/data/kidoland.sqlite"
+  SEED_DEMO_DATA = "false"
+
+[mounts]
+  source = "kidoland_data"
+  destination = "/data"
+  initial_size = "1gb"
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/api/health"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
