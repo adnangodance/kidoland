@@ -1,5 +1,7 @@
 import express from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
@@ -7,6 +9,13 @@ import { db, localCalendarDate, ALL_FEATURES, getRoleFeaturePermissions, setRole
 import { requireAuth, signToken, type AuthUser } from './auth.js'
 
 export const app = express()
+
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  }),
+)
 
 const corsOrigin = process.env.CORS_ORIGIN
 const allowedOrigins = corsOrigin
@@ -33,6 +42,14 @@ app.use((error: { type?: string }, _req: express.Request, res: express.Response,
   next(error)
 })
 
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'test' ? 2000 : 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_login_attempts' },
+})
+
 function authed(req: express.Request): AuthUser {
   return (req as express.Request & { user: AuthUser }).user
 }
@@ -46,7 +63,7 @@ const loginSchema = z.object({
   password: z.string().min(1),
 })
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', loginLimiter, (req, res) => {
   const parsed = loginSchema.safeParse(req.body)
   if (!parsed.success) {
     return res.status(400).json({ error: 'invalid_body' })
