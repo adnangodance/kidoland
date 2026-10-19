@@ -8,6 +8,9 @@ const dbPath = process.env.KIDOLAND_DB_PATH || path.join(__dirname, '..', 'kidol
 
 export const db = new Database(dbPath)
 db.pragma('foreign_keys = ON')
+db.pragma('journal_mode = WAL')
+db.pragma('busy_timeout = 5000')
+db.pragma('synchronous = NORMAL')
 
 export function localCalendarDate(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
