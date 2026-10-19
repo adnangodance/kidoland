@@ -5,6 +5,9 @@ import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { db, localCalendarDate, ALL_FEATURES, getRoleFeaturePermissions, setRoleFeaturePermission, resetRoleFeaturePermissions, type DbUser, type DbChildSleepLog, type DbChildMedication, type DbChildHygieneLog } from './db.js'
 import { requireAuth, signToken, type AuthUser } from './auth.js'
 
@@ -3643,3 +3646,15 @@ app.get('/api/timeline', requireAuth, (req, res) => {
     timeline: events,
   })
 })
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const distDir = path.resolve(__dirname, '../../dist')
+if (fs.existsSync(distDir)) {
+  app.use(express.static(distDir))
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api')) {
+      return res.sendFile(path.join(distDir, 'index.html'))
+    }
+    next()
+  })
+}

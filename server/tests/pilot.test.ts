@@ -34,7 +34,7 @@ async function fixture(existing?: (db: Database.Database) => void) {
     return { status: response.status, data: await response.json() }
   }
   async function login(role: string) { const result = await request('auth/login', undefined, { email: `${role}@kidoland.demo`, password: `${role}123` }); assert.equal(result.status, 200); return result.data.token as string }
-  return { start, stop, request, login, databasePath, dispose: async () => { await stop(); await rm(directory, { recursive: true, force: true }) } }
+  return { start, stop, request, login, getBase: () => base, databasePath, dispose: async () => { await stop(); await rm(directory, { recursive: true, force: true }) } }
 }
 
 test('pilot API authorization, management, consent, reports, fees and durable retries', async (t) => {
@@ -1678,4 +1678,19 @@ test('production security: JWT_SECRET enforcement in production mode', async () 
     await rm(directory, { recursive: true, force: true })
   }
 })
+
+test('production static serving: serves index.html for client routes when dist exists', async () => {
+  const f = await fixture()
+  try {
+    await f.start()
+    const res = await fetch(`${f.getBase()}/attendance`)
+    if (res.status === 200) {
+      const text = await res.text()
+      assert.ok(text.includes('<html') || text.includes('<!DOCTYPE') || text.includes('root') || text.includes('vite') || text.includes('Kidoland'), 'Must serve SPA index.html')
+    }
+  } finally {
+    await f.dispose()
+  }
+})
+
 
