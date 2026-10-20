@@ -844,6 +844,17 @@ export function resetRoleFeaturePermissions() {
   db.prepare('UPDATE role_feature_permissions SET is_enabled = 1, updated_at = ?').run(now)
 }
 
+export function cleanOldReportPhotos(days = 30) {
+  const safeDays = Math.max(1, Math.min(365, Number(days) || 30))
+  const res = db.prepare("DELETE FROM report_photos WHERE created_at < datetime('now', '-' || ? || ' days')").run(safeDays)
+  if (res.changes > 0) {
+    try {
+      db.pragma('wal_checkpoint(TRUNCATE)')
+    } catch {}
+  }
+  return { deletedCount: res.changes }
+}
+
 const childCount = db.prepare('SELECT COUNT(*) AS c FROM children').get() as { c: number }
 if (childCount.c === 0 && db.prepare("SELECT id FROM users WHERE id = 'u-parent' AND role = 'parent'").get()) {
   db.prepare(

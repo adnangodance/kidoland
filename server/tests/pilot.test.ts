@@ -1922,6 +1922,37 @@ test('database backup and restore API: authorization, binary integrity check, an
   }
 })
 
+test('photo retention and storage cleanup API: authorization and automated purge', async () => {
+  const f = await fixture()
+  try {
+    await f.start()
+    const base = f.getBase()
+    const director = await f.login('director')
+    const superadmin = await f.login('admin')
+
+    // 1. Director cannot trigger cleanup
+    const badClean = await fetch(`${base}/api/admin/clean-photos`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${director}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days: 30 }),
+    })
+    assert.equal(badClean.status, 403)
+
+    // 2. Superadmin triggers cleanup
+    const goodClean = await fetch(`${base}/api/admin/clean-photos`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${superadmin}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days: 30 }),
+    })
+    assert.equal(goodClean.status, 200)
+    const json = await goodClean.json() as { ok: boolean; deletedCount: number }
+    assert.equal(json.ok, true)
+    assert.equal(typeof json.deletedCount, 'number')
+  } finally {
+    await f.dispose()
+  }
+})
+
 
 
 

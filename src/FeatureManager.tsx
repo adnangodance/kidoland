@@ -14,6 +14,7 @@ import {
   resetUserPassword,
   downloadDatabaseBackup,
   restoreDatabaseBackup,
+  cleanOldReportPhotosRequest,
   type FeaturePermissionMap,
   type FeatureRole,
   type User,
@@ -242,6 +243,9 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
   const [selectedBackupFile, setSelectedBackupFile] = useState<File | null>(null)
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false)
   const [restoreStatus, setRestoreStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [cleanBusy, setCleanBusy] = useState(false)
+  const [cleanDays, setCleanDays] = useState(30)
+  const [cleanResult, setCleanResult] = useState<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [createRole, setCreateRole] = useState<'teacher' | 'director' | 'parent' | 'superadmin'>('teacher')
   const [createName, setCreateName] = useState('')
@@ -432,6 +436,25 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
       }
     } finally {
       if (alive.current) setRestoreBusy(false)
+    }
+  }
+
+  const handleCleanPhotos = async () => {
+    if (!token || cleanBusy) return
+    setCleanBusy(true)
+    setCleanResult(null)
+    try {
+      const res = await cleanOldReportPhotosRequest(token, cleanDays)
+      const msg = t.cleanPhotosSuccess.replace('{count}', String(res.deletedCount))
+      if (alive.current) {
+        setCleanResult(msg)
+      }
+    } catch {
+      if (alive.current) {
+        setError(lang === 'sq' ? 'Pastrimi i fotografive dështoi.' : 'Failed to clean old photos.')
+      }
+    } finally {
+      if (alive.current) setCleanBusy(false)
     }
   }
 
@@ -781,6 +804,52 @@ export function FeatureManager({ onPermissionsChanged }: { onPermissionsChanged?
                 style={{ width: '100%', boxSizing: 'border-box', justifyContent: 'center' }}
               >
                 {restoreBusy ? t.restoreInProgress : t.restoreBackupBtn}
+              </button>
+            </div>
+          </div>
+
+          {/* Storage & Automated Photo Retention Card */}
+          <div className="panel" style={{ margin: 0, padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
+            <div>
+              <h4 style={{ margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px' }}>
+                <Icon name="reports" size={18} />
+                {t.storageCleanupTitle}
+              </h4>
+              <p style={{ margin: 0, color: 'var(--kd-muted)', fontSize: '13px', lineHeight: '1.5' }}>
+                {t.storageCleanupSubtitle}
+              </p>
+            </div>
+
+            {cleanResult && (
+              <div className="notice success-banner" role="status" style={{ margin: 0 }}>
+                ✓ {cleanResult}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600 }}>
+                {t.retentionPeriodLabel}
+                <select
+                  value={cleanDays}
+                  onChange={(e) => setCleanDays(Number(e.target.value))}
+                  disabled={cleanBusy}
+                  style={{ padding: '6px 12px', borderRadius: '6px' }}
+                >
+                  <option value={14}>{t.days14}</option>
+                  <option value={30}>{t.days30}</option>
+                  <option value={60}>{t.days60}</option>
+                  <option value={90}>{t.days90}</option>
+                </select>
+              </label>
+
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={cleanBusy}
+                onClick={handleCleanPhotos}
+                style={{ padding: '8px 16px' }}
+              >
+                {cleanBusy ? t.cleaningInProgress : t.cleanOldPhotosBtn}
               </button>
             </div>
           </div>

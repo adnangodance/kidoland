@@ -1550,3 +1550,10 @@ export async function restoreDatabaseBackup(token: string, file: File | Blob) {
   }
   return data as { ok: boolean; message: string }
 }
+
+export async function cleanOldReportPhotosRequest(token: string, days = 30) {
+  return api<{ ok: boolean; deletedCount: number }>('/api/admin/clean-photos', {
+    method: 'POST',
+    body: JSON.stringify({ days }),
+  }, token)
+}

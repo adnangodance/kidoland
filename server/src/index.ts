@@ -10,7 +10,7 @@ import Database from 'better-sqlite3'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { db, dbPath, localCalendarDate, ALL_FEATURES, getRoleFeaturePermissions, setRoleFeaturePermission, resetRoleFeaturePermissions, type DbUser, type DbChildSleepLog, type DbChildMedication, type DbChildHygieneLog } from './db.js'
+import { db, dbPath, localCalendarDate, ALL_FEATURES, getRoleFeaturePermissions, setRoleFeaturePermission, resetRoleFeaturePermissions, cleanOldReportPhotos, type DbUser, type DbChildSleepLog, type DbChildMedication, type DbChildHygieneLog } from './db.js'
 import { requireAuth, signToken, type AuthUser } from './auth.js'
 
 export const app = express()
@@ -3682,6 +3682,22 @@ app.post('/api/admin/restore', requireAuth, express.raw({ type: '*/*', limit: '5
     res.status(500).json({ error: 'restore_failed', message: err?.message || 'Failed to restore database' })
   }
 })
+
+app.post('/api/admin/clean-photos', requireAuth, (req, res) => {
+  const user = authed(req)
+  if (user.role !== 'superadmin') return res.status(403).json({ error: 'forbidden' })
+  const days = typeof req.body?.days === 'number' ? req.body.days : 30
+  const result = cleanOldReportPhotos(days)
+  res.json({ ok: true, deletedCount: result.deletedCount })
+})
+
+// Automated background photo retention runner (every 24 hours, cleans photos older than 30 days)
+if (process.env.NODE_ENV !== 'test') {
+  try { cleanOldReportPhotos(30) } catch {}
+  setInterval(() => {
+    try { cleanOldReportPhotos(30) } catch {}
+  }, 24 * 60 * 60 * 1000).unref()
+}
 
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const parsed = z.object({ date: calendarDate }).strict().safeParse(req.query)
