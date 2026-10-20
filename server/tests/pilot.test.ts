@@ -1953,6 +1953,75 @@ test('photo retention and storage cleanup API: authorization and automated purge
   }
 })
 
+test('parent self-registration API: public register, duplicate rejection, and credential authentication', async () => {
+  const f = await fixture()
+  try {
+    await f.start()
+    const base = f.getBase()
+
+    // 1. Invalid payload rejected
+    const badRes = await fetch(`${base}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'A', email: 'not-an-email', password: '123' }),
+    })
+    assert.equal(badRes.status, 400)
+
+    // 2. Register valid parent
+    const regRes = await fetch(`${base}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Albana Krasniqi',
+        email: 'albana.parent@example.com',
+        password: 'password123',
+      }),
+    })
+    assert.equal(regRes.status, 201)
+    const regJson = await regRes.json() as { token: string; user: { id: string; name: string; email: string; role: string } }
+    assert.ok(regJson.token)
+    assert.equal(regJson.user.role, 'parent')
+    assert.equal(regJson.user.name, 'Albana Krasniqi')
+    assert.equal(regJson.user.email, 'albana.parent@example.com')
+
+    // 3. Duplicate email rejected with 409
+    const dupRes = await fetch(`${base}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Another Parent',
+        email: 'ALBANA.PARENT@EXAMPLE.COM',
+        password: 'differentpassword',
+      }),
+    })
+    assert.equal(dupRes.status, 409)
+
+    // 4. Authenticate newly created parent via standard /api/auth/login
+    const loginRes = await fetch(`${base}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'albana.parent@example.com',
+        password: 'password123',
+      }),
+    })
+    assert.equal(loginRes.status, 200)
+    const loginJson = await loginRes.json() as { token: string; user: { id: string; role: string } }
+    assert.equal(loginJson.user.id, regJson.user.id)
+    assert.equal(loginJson.user.role, 'parent')
+
+    // 5. Access parent child list with new token (starts empty)
+    const childrenRes = await fetch(`${base}/api/children`, {
+      headers: { Authorization: `Bearer ${regJson.token}` },
+    })
+    assert.equal(childrenRes.status, 200)
+    const childrenJson = await childrenRes.json() as { children: unknown[] }
+    assert.deepEqual(childrenJson.children, [])
+  } finally {
+    await f.dispose()
+  }
+})
+
 
 
 

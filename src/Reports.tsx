@@ -9,6 +9,7 @@ import { displayDate, useAlive } from './pilot-utils'
 import ChildAvatar from './ChildAvatar'
 import { SeaGodanciBadge } from './child-highlight'
 import { isSeaGodanci } from './child-highlight-util'
+import { compressImage, formatBytes, MAX_IMAGE_FILE_SIZE } from './utils/imageCompressor'
 
 import Icon from './Icon'
 
@@ -136,6 +137,8 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
   const [retry, setRetry] = useState(0)
   const [error, setError] = useState('')
   const [imageError, setImageError] = useState('')
+  const [compressingImage, setCompressingImage] = useState(false)
+  const [compressStats, setCompressStats] = useState<{ originalSize: number; compressedSize: number; compressed: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [batchSaved, setBatchSaved] = useState(false)
@@ -237,7 +240,7 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
   }, [token, retry])
   useEffect(() => {
     const version = ++generation.current
-    setReports([]); setDraft(empty); setError(''); setImageError(''); setSaved(false)
+    setReports([]); setDraft(empty); setError(''); setImageError(''); setSaved(false); setCompressStats(null); setCompressingImage(false)
     if (fileInputRef.current) fileInputRef.current.value = ''
     if (!rosterReady || !token) return
     if (!validDate(date)) { setLoading(false); return }
@@ -251,32 +254,60 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
   }, [token, childId, date, rosterReady])
   function changeContext(nextChild: string, nextDate: string) {
     generation.current++
-    setReports([]); setDraft(empty); setSaved(false); setError(''); setImageError(''); setLoading(true)
+    setReports([]); setDraft(empty); setSaved(false); setError(''); setImageError(''); setLoading(true); setCompressStats(null); setCompressingImage(false)
     if (fileInputRef.current) fileInputRef.current.value = ''
     setChildId(nextChild); setDate(nextDate)
   }
-  function handleImage(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('image/')) {
       setImageError(t.imageInvalid)
+      setCompressStats(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > MAX_IMAGE_FILE_SIZE) {
       setImageError(t.imageTooLarge)
+      setCompressStats(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }
     setImageError('')
-    const reader = new FileReader()
-    reader.onload = () => {
+    setCompressingImage(true)
+    try {
+      const result = await compressImage(file, {
+        maxDimension: 1280,
+        quality: 0.82,
+        maxFileSize: MAX_IMAGE_FILE_SIZE,
+      })
+      if (!alive.current) return
       setSaved(false)
-      setDraft((d) => ({ ...d, imageUrl: reader.result as string }))
+      setDraft((d) => ({ ...d, imageUrl: result.dataUrl }))
+      setCompressStats({
+        originalSize: result.originalSize,
+        compressedSize: result.compressedSize,
+        compressed: result.compressed,
+      })
+    } catch (err: unknown) {
+      if (!alive.current) return
+      const msg = err instanceof Error ? err.message : ''
+      if (msg === 'FILE_TOO_LARGE') {
+        setImageError(t.imageTooLarge)
+      } else {
+        setImageError(t.imageInvalid)
+      }
+      setCompressStats(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    } finally {
+      if (alive.current) setCompressingImage(false)
     }
-    reader.readAsDataURL(file)
   }
   function removeImage() {
     setSaved(false)
     setDraft((d) => ({ ...d, imageUrl: '' }))
+    setCompressStats(null)
+    setImageError('')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
   async function save(event: FormEvent) {
@@ -597,13 +628,60 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
         </fieldset>
         <div className="editor-section"><h3><span>03</span>{t.reportNoteTitle}</h3><label>{t.reportsNote}<textarea rows={4} maxLength={5000} value={draft.note} onChange={(e) => { setSaved(false); setDraft({ ...draft, note: e.target.value }) }} /></label></div>
         <div className="editor-section"><h3><span>04</span>{t.reportPhotoTitle}</h3>
-        <label>{t.reportPhoto}<input ref={fileInputRef} type="file" accept="image/*" disabled={busy} onChange={handleImage} /></label>
+        <label>{t.reportPhoto}<input ref={fileInputRef} type="file" accept="image/*" disabled={busy || compressingImage} onChange={handleImage} /></label>
+        {compressingImage && (
+          <p className="hint image-compressing-hint" style={{ color: 'var(--kd-accent)', display: 'flex', alignItems: 'center', gap: '6px', margin: '4px 0' }}>
+            <span>⏳</span>
+            <span>{t.imageCompressing}</span>
+          </p>
+        )}
         {imageError && <p className="form-error" role="alert">{imageError}</p>}
-        {draft.imageUrl && <div className="report-image-preview"><img src={draft.imageUrl} alt={t.reportPhoto} /><button type="button" className="btn ghost" disabled={busy} onClick={removeImage}>{t.removeImage}</button></div>}
+        {draft.imageUrl && (
+          <div className="report-image-preview">
+            <img src={draft.imageUrl} alt={t.reportPhoto} />
+            {compressStats && (
+              <div
+                className="image-compress-badge"
+                style={{
+                  fontSize: '12px',
+                  color: '#15803d',
+                  background: '#f0fdf4',
+                  border: '1px solid #bbf7d0',
+                  padding: '5px 10px',
+                  borderRadius: '6px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  maxWidth: '100%',
+                  boxSizing: 'border-box',
+                  margin: '4px 0',
+                }}
+              >
+                <span>✓</span>
+                <span>
+                  {compressStats.compressed && compressStats.originalSize > compressStats.compressedSize
+                    ? t.imageCompressed
+                        .replace('{original}', formatBytes(compressStats.originalSize))
+                        .replace('{compressed}', formatBytes(compressStats.compressedSize))
+                        .replace(
+                          '{savings}',
+                          Math.round(
+                            ((compressStats.originalSize - compressStats.compressedSize) /
+                              compressStats.originalSize) *
+                              100,
+                          ).toString(),
+                        )
+                    : t.imageOptimized.replace('{size}', formatBytes(compressStats.compressedSize))}
+                </span>
+              </div>
+            )}
+            <button type="button" className="btn ghost" disabled={busy || compressingImage} onClick={removeImage}>{t.removeImage}</button>
+          </div>
+        )}
         {selectedChild && <p className="hint">{t.permission}: <strong>{selectedChild.photoConsent ? t.allowed : t.notAllowed}</strong>{!selectedChild.photoConsent && ` — ${t.imageConsentNotice}`}</p>}
         </div><div className="actions editor-actions">
-          <button className="btn primary" disabled={!draft.activities}>{busy ? t.attendanceSaving : t.reportSave}</button>
-          <button type="button" className="btn ghost" disabled={!draft.activities || busy || !selectedChild?.groupName} onClick={() => void batchApply()}>{t.batchApplyToGroup}</button>
+          <button className="btn primary" disabled={!draft.activities || busy || compressingImage}>{busy ? t.attendanceSaving : t.reportSave}</button>
+          <button type="button" className="btn ghost" disabled={!draft.activities || busy || compressingImage || !selectedChild?.groupName} onClick={() => void batchApply()}>{t.batchApplyToGroup}</button>
         </div>
       </fieldset>
     </form>}

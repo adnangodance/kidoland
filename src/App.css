@@ -271,6 +271,57 @@
   color: #1a5c45;
 }
 
+.auth-mode-toggle {
+  display: flex;
+  background: #eaf1ec;
+  padding: 4px;
+  border-radius: 999px;
+  margin-bottom: 1.15rem;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  gap: 4px;
+}
+
+.auth-tab-btn {
+  flex: 1 1 0;
+  border: 0;
+  background: transparent;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 650;
+  font-size: 0.9rem;
+  color: #496350;
+  cursor: pointer;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.auth-tab-btn.active {
+  background: #ffffff;
+  color: #1a5c45;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.landing-nav-btns {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.landing-invitation-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
 .login-form {
   display: grid;
   gap: 0.85rem;

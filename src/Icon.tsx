@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import logoUrl from './assets/logo.png'
 
 const paths = {
   dashboard: 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
@@ -41,6 +42,6 @@ export default function Icon({ name, size = 20, className, style }: { name: Icon
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false" className={className} style={style}><path d={paths[name]} /></svg>
 }
 
-export function BrandMark() {
-  return <svg viewBox="0 0 40 40" width="40" height="40" aria-hidden="true" focusable="false"><rect width="40" height="40" rx="13" fill="currentColor" /><path d="M20 30V19M20 23C11 24 8 17 9 12c7-1 12 3 11 11Z" fill="#cde6ba" /><path d="M20 19C19 12 25 9 31 10c1 6-4 11-11 9Z" fill="#f3cc79" /></svg>
+export function BrandMark({ size = 40, className = '' }: { size?: number; className?: string } = {}) {
+  return <img src={logoUrl} alt="Kidoland" className={`brand-mark-img ${className}`} width={size} height={Math.round((size * 178) / 218)} aria-hidden="true" style={{ objectFit: 'contain' }} />
 }

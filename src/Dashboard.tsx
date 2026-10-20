@@ -88,15 +88,25 @@ export default function Dashboard({ go }: { go: (view: Destination, context?: { 
       <div className="metrics">{metrics.map((metric) => <article className={`metric-card tone-${metric.tone}`} key={metric.label}><div className="metric-top"><h2>{metric.label}</h2><span className="metric-icon"><Icon name={metric.icon} size={20} /></span></div><strong>{metric.value}</strong>{metric.icon === 'payments' && <p className="metric-detail">{summary.unpaidBalances.map((balance) => euro(balance.amountCents, lang, balance.currency)).join(' · ') || '—'}</p>}</article>)}</div>
       {parent ? <>
         <div className="section-title"><h2>{t.familyOverview}</h2><span>{date}</span></div>
-        <div className="family-grid">{summary.childSummaries.map((child) => <article className={`roster-card family-card ${isSeaGodanci(child.name) ? 'sea-godanci-card' : ''}`} key={child.id}>
-          <div className="card-avatar-heading"><ChildAvatar name={child.name} size={44} /><div><h2>{child.name} <SeaGodanciBadge name={child.name} /></h2><p className="card-subtitle">{child.groupName}</p></div><Icon name="leaf" size={22} /></div>
-          {child.allergies && <p className="allergy-badge"><span aria-hidden="true">⚠️ </span><strong>{t.allergies}:</strong> {child.allergies}</p>}
-          <div className="card-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button className="btn ghost" style={{ flex: '1 1 110px' }} onClick={() => go('reports', { childId: child.id, date })}>{t.dashRead}<Icon name="arrow" size={16} /></button>
-            <button className="btn ghost" style={{ flex: '1 1 110px' }} onClick={() => go('timeline', { childId: child.id, date })}>{t.timelineViewBtn}<Icon name="clock" size={16} /></button>
-            <button className="btn secondary" style={{ flex: '1 1 110px' }} onClick={() => setSelectedProfileChildId(child.id)}><Icon name="children" size={16} />{t.viewProfileBtn}</button>
+        {summary.childSummaries.length === 0 ? (
+          <div className="roster-card" style={{ padding: '24px', textAlign: 'center', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
+            <span style={{ display: 'inline-flex', padding: '12px', background: 'var(--kd-surface-alt, #f7faf5)', borderRadius: '50%', color: 'var(--kd-primary, #1a5c45)', marginBottom: '8px' }}>
+              <Icon name="children" size={28} />
+            </span>
+            <h3 style={{ margin: '0 0 6px', fontSize: '16px' }}>{t.parentWelcomeNoChildrenTitle}</h3>
+            <p style={{ margin: 0, color: 'var(--kd-muted, #556b5b)', fontSize: '13.5px', lineHeight: '1.5' }}>{t.parentWelcomeNoChildrenDesc}</p>
           </div>
-        </article>)}</div>
+        ) : (
+          <div className="family-grid">{summary.childSummaries.map((child) => <article className={`roster-card family-card ${isSeaGodanci(child.name) ? 'sea-godanci-card' : ''}`} key={child.id}>
+            <div className="card-avatar-heading"><ChildAvatar name={child.name} size={44} /><div><h2>{child.name} <SeaGodanciBadge name={child.name} /></h2><p className="card-subtitle">{child.groupName}</p></div><Icon name="leaf" size={22} /></div>
+            {child.allergies && <p className="allergy-badge"><span aria-hidden="true">⚠️ </span><strong>{t.allergies}:</strong> {child.allergies}</p>}
+            <div className="card-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button className="btn ghost" style={{ flex: '1 1 110px' }} onClick={() => go('reports', { childId: child.id, date })}>{t.dashRead}<Icon name="arrow" size={16} /></button>
+              <button className="btn ghost" style={{ flex: '1 1 110px' }} onClick={() => go('timeline', { childId: child.id, date })}>{t.timelineViewBtn}<Icon name="clock" size={16} /></button>
+              <button className="btn secondary" style={{ flex: '1 1 110px' }} onClick={() => setSelectedProfileChildId(child.id)}><Icon name="children" size={16} />{t.viewProfileBtn}</button>
+            </div>
+          </article>)}</div>
+        )}
       </> : <div className="dashboard-work-grid">
         <section className="work-section">
           <div className="section-title"><h2>{t.nextUp}</h2><span>{t.selectedDay}</span></div>

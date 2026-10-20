@@ -13,6 +13,7 @@ import {
   type DocumentType,
   type DocumentSummaryStats,
 } from './api'
+import { compressImage, MAX_IMAGE_FILE_SIZE } from './utils/imageCompressor'
 
 const DOC_TYPE_ICONS: Record<DocumentType, string> = {
   enrollment_contract: '📝',
@@ -132,11 +133,11 @@ export function Documents() {
     void loadDocs()
   }, [loadDocs])
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > MAX_IMAGE_FILE_SIZE) {
       setUploadError(t.imageTooLarge)
       return
     }
@@ -149,13 +150,29 @@ export function Documents() {
       setUploadTitle(file.name.replace(/\.[^/.]+$/, ''))
     }
 
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setUploadFileUrl(reader.result)
+    if (file.type.startsWith('image/')) {
+      try {
+        const result = await compressImage(file, {
+          maxDimension: 1600,
+          quality: 0.82,
+          maxFileSize: MAX_IMAGE_FILE_SIZE,
+        })
+        if (alive.current) {
+          setUploadFileUrl(result.dataUrl)
+          setUploadFileSize(result.compressedSize)
+        }
+      } catch {
+        if (alive.current) setUploadError(t.imageInvalid)
       }
+    } else {
+      const reader = new FileReader()
+      reader.onload = () => {
+        if (alive.current && typeof reader.result === 'string') {
+          setUploadFileUrl(reader.result)
+        }
+      }
+      reader.readAsDataURL(file)
     }
-    reader.readAsDataURL(file)
   }
 
   const handleUploadSubmit = async (e: React.FormEvent) => {

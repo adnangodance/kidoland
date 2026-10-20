@@ -535,6 +535,19 @@ async function run() {
   button(translations.en.roleParentLabel, main()); await until(() => main().querySelector('.role-tab-card.active'))
   assert(Boolean(main().querySelector('.role-tab-card.active')), 'superadmin switches target role tab')
   await logout()
+  // Parent self-registration flow verification
+  button(translations.en.ctaSignUp)
+  await until(() => main().querySelector('input[type=email]'))
+  assert(Boolean(main().querySelector('.auth-mode-toggle')), 'auth screen shows login / signup mode selector')
+  fit('parent signup form')
+  await set(translations.en.signupFullName, 'Besa Kelmendi')
+  await set(translations.en.signupEmail, `besa.${Date.now()}@example.com`)
+  await set(translations.en.signupPassword, 'besaparent123')
+  button(translations.en.signupSubmit, main())
+  await until(() => main().querySelector('.metrics'), 'parent registration dashboard')
+  assert(main().textContent?.includes(translations.en.dashParent), 'registered parent navigates directly to parent dashboard')
+  assert(main().textContent?.includes(translations.en.parentWelcomeNoChildrenTitle), 'new registered parent sees friendly child linking notice')
+  await logout()
   output.dataset.result = 'passed'; output.textContent = `${results.join('\n')}\n${results.length} full-app checks passed.`
 }
 void run().then(() => originalFetch('/__pilot_results', { method: 'POST', body: JSON.stringify({ ok: true, output: output.textContent }) })).catch((error) => { output.dataset.result = 'failed'; output.textContent += `\nFAIL: ${String(error)}`; return originalFetch('/__pilot_results', { method: 'POST', body: JSON.stringify({ ok: false, output: output.textContent }) }) })

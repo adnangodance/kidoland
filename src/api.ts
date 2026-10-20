@@ -101,6 +101,13 @@ export async function loginRequest(email: string, password: string) {
   })
 }
 
+export async function registerParentRequest(name: string, email: string, password: string) {
+  return api<{ token: string; user: User }>('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name, email, password }),
+  })
+}
+
 export async function getSetupStatus() {
   return api<{ needsSetup: boolean }>('/api/auth/setup-status')
 }

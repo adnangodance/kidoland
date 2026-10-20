@@ -129,6 +129,45 @@ app.post('/api/auth/login', loginLimiter, (req, res) => {
   res.json({ token: signToken(user), user })
 })
 
+const registerSchema = z.object({
+  name: z.string().trim().min(2).max(200),
+  email: z.string().trim().email().max(254),
+  password: z.string().min(6).max(100),
+})
+
+app.post('/api/auth/register', loginLimiter, (req, res) => {
+  const parsed = registerSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
+  }
+  const { name, email, password } = parsed.data
+  const normalizedEmail = email.toLowerCase()
+
+  const existing = db
+    .prepare('SELECT id FROM users WHERE lower(email) = ?')
+    .get(normalizedEmail) as { id: string } | undefined
+  if (existing) {
+    return res.status(409).json({ error: 'email_exists' })
+  }
+
+  const id = `u-${randomUUID()}`
+  const hash = bcrypt.hashSync(password, 10)
+  db.prepare('INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)').run(
+    id,
+    name,
+    normalizedEmail,
+    hash,
+    'parent',
+  )
+  const user: AuthUser = {
+    id,
+    name,
+    email: normalizedEmail,
+    role: 'parent',
+  }
+  res.status(201).json({ token: signToken(user), user })
+})
+
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: authed(req) })
 })

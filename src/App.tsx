@@ -29,7 +29,7 @@ import { MedicationHealth } from './MedicationHealth'
 import { HygieneTracker } from './HygieneTracker'
 import { DailyTimeline } from './Timeline'
 import { FeatureManager } from './FeatureManager'
-import { getFeaturePermissions, getSetupStatus, setupAdminRequest } from './api'
+import { getFeaturePermissions, getSetupStatus, setupAdminRequest, registerParentRequest } from './api'
 import './App.css'
 import './theme.css'
 import './Sidebar.css'
@@ -51,6 +51,7 @@ function Shell() {
   const { t, toggle, lang } = useI18n()
   const { user, token, loading, logout, expired, bootError, retryBoot } = useAuth()
   const [view, setView] = useState<View>('home')
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
   const [menuOpen, setMenuOpen] = useState(false)
   const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 1280px)').matches)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => { try { return localStorage.getItem('kidoland.sidebar-collapsed') === 'true' } catch { return false } })
@@ -189,7 +190,14 @@ function Shell() {
   }, [menuOpen])
 
   if (loading) return <div className="loading" role="status"><BrandMark /><span>{t.loading}</span></div>
-  const go = (v: View, context?: { childId?: string; date?: string }) => { setReportContext(context || {}); setView(v); setMenuOpen(false); setSidebarPeeking(false) }
+  const go = (v: View, context?: { childId?: string; date?: string; authMode?: 'login' | 'signup' }) => {
+    setReportContext(context || {})
+    if (context?.authMode) setAuthMode(context.authMode)
+    else if (v === 'login') setAuthMode('login')
+    setView(v)
+    setMenuOpen(false)
+    setSidebarPeeking(false)
+  }
   const keepPeek = () => { if (peekTimer.current) clearTimeout(peekTimer.current) }
   const peek = () => { keepPeek(); if (!narrow && sidebarCollapsed) setSidebarPeeking(true) }
   const leavePeek = () => { keepPeek(); peekTimer.current = setTimeout(() => setSidebarPeeking(false), 150) }
@@ -213,7 +221,7 @@ function Shell() {
         <div className="nav-actions">
           {user && <button type="button" className="header-search" aria-label={t.searchPages} onClick={() => setSearchOwner(user.id)}><Icon name="search" size={18} /></button>}
           <button type="button" className="lang-btn" onClick={toggle}>{lang === 'en' ? 'SQ' : 'EN'} · {t.langToggle}</button>
-          {user ? <><div className="user-identity"><span className="user-avatar" aria-hidden="true">{user.name.trim().slice(0, 1)}</span><div><strong>{user.name}</strong><span>{roleLabel}</span></div></div><button type="button" className="btn ghost logout-btn" onClick={() => { logout(); go('home') }}><Icon name="logout" /><span>{t.logout}</span></button></> : <button type="button" className="btn primary" onClick={() => go('login')}>{t.ctaStart}<Icon name="arrow" size={17} /></button>}
+          {user ? <><div className="user-identity"><span className="user-avatar" aria-hidden="true">{user.name.trim().slice(0, 1)}</span><div><strong>{user.name}</strong><span>{roleLabel}</span></div></div><button type="button" className="btn ghost logout-btn" onClick={() => { logout(); go('home') }}><Icon name="logout" /><span>{t.logout}</span></button></> : <div className="landing-nav-btns"><button type="button" className="btn ghost header-login-btn" onClick={() => go('login', { authMode: 'login' })}>{t.ctaStart}</button><button type="button" className="btn primary header-signup-btn" onClick={() => go('login', { authMode: 'signup' })}>{t.ctaSignUp}<Icon name="arrow" size={17} /></button></div>}
         </div>
       </header>
 
@@ -222,8 +230,8 @@ function Shell() {
       <main id="main-content" key={`${user?.id || 'public'}:${token || ''}`}>
         {expired && <p role="alert" className="notice session-notice">{t.attendanceSessionExpired}</p>}
         {bootError && <section className="panel"><p role="alert">{t.loadError}</p><div className="actions"><button className="btn primary" onClick={retryBoot}>{t.attendanceRetry}</button><button className="btn ghost" onClick={logout}>{t.logout}</button></div></section>}
-        {!user && !bootError && activeView !== 'home' && <Login onSuccess={() => go('dashboard')} />}
-        {!user && !bootError && activeView === 'home' && <Home onLogin={() => go('login')} />}
+        {!user && !bootError && activeView !== 'home' && <Login initialMode={authMode} onSuccess={() => go('dashboard')} />}
+        {!user && !bootError && activeView === 'home' && <Home onLogin={(mode) => go('login', { authMode: mode || 'login' })} />}
         {user && isFeatureDisabled && (
           <section className="panel feature-disabled-panel">
             <h1 tabIndex={-1}>{currentLabel || t.navFeatures}</h1>
@@ -275,16 +283,16 @@ function GardenArt() {
   </svg>
 }
 
-function Home({ onLogin }: { onLogin: () => void }) {
+function Home({ onLogin }: { onLogin: (mode?: 'login' | 'signup') => void }) {
   const { t } = useI18n()
   return <>
     <section className="hero">
-      <div className="hero-copy"><p className="eyebrow"><Icon name="sun" size={17} />{t.brandCaption}</p><h1 tabIndex={-1}>{t.heroTitle}</h1><p className="lead">{t.heroSub}</p><div className="hero-cta"><button type="button" className="btn primary" onClick={onLogin}>{t.ctaStart}<Icon name="arrow" /></button><span className="hero-language"><Icon name="check" size={16} />{t.featureLang}</span></div><p className="hero-footnote">{t.careTogether}</p></div>
+      <div className="hero-copy"><p className="eyebrow"><Icon name="sun" size={17} />{t.brandCaption}</p><h1 tabIndex={-1}>{t.heroTitle}</h1><p className="lead">{t.heroSub}</p><div className="hero-cta"><button type="button" className="btn primary hero-signup-btn" onClick={() => onLogin('signup')}>{t.ctaSignUp}<Icon name="arrow" /></button><button type="button" className="btn ghost hero-login-btn" onClick={() => onLogin('login')}>{t.ctaStart}</button><span className="hero-language"><Icon name="check" size={16} />{t.featureLang}</span></div><p className="hero-footnote">{t.careTogether}</p></div>
       <WorkspacePreview />
     </section>
     <section className="landing-section"><div className="section-heading"><p className="eyebrow">{t.everyDayTitle}</p><h2>{t.everyDayBody}</h2></div><div className="features">{([{ title: t.featureReports, body: t.featureReportsBody, icon: 'reports' }, { title: t.featurePayments, body: t.featurePaymentsBody, icon: 'payments' }, { title: t.featureLang, body: t.featureLangBody, icon: 'messages' }, { title: t.featureSafety, body: t.featureSafetyBody, icon: 'incidents' }] as const).map((feature) => <article key={feature.title}><span className="feature-icon"><Icon name={feature.icon} size={23} /></span><h3>{feature.title}</h3><p>{feature.body}</p></article>)}</div></section>
     <section className="roles"><article><Icon name="children" size={28} /><h2>{t.forParents}</h2><p>{t.forParentsBody}</p></article><article><Icon name="leaf" size={28} /><h2>{t.forStaff}</h2><p>{t.forStaffBody}</p></article></section>
-    <section className="landing-invitation"><div><h2>{t.careTogether}</h2><p>{t.loginIntro}</p></div><button className="btn primary" onClick={onLogin}>{t.ctaStart}<Icon name="arrow" /></button></section>
+    <section className="landing-invitation"><div><h2>{t.careTogether}</h2><p>{t.loginIntro}</p></div><div className="landing-invitation-actions"><button type="button" className="btn primary" onClick={() => onLogin('signup')}>{t.ctaSignUp}<Icon name="arrow" /></button><button type="button" className="btn ghost" onClick={() => onLogin('login')}>{t.ctaStart}</button></div></section>
   </>
 }
 
@@ -297,14 +305,26 @@ function WorkspacePreview() {
   </div>
 }
 
-function Login({ onSuccess }: { onSuccess: () => void }) {
+function Login({ onSuccess, initialMode = 'login' }: { onSuccess: () => void; initialMode?: 'login' | 'signup' }) {
   const { t } = useI18n()
   const { login, setSession } = useAuth()
+  const [mode, setMode] = useState<'login' | 'signup'>(initialMode)
+
+  useEffect(() => {
+    setMode(initialMode)
+  }, [initialMode])
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState(false)
   const [busy, setBusy] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+
+  const [signupName, setSignupName] = useState('')
+  const [signupEmail, setSignupEmail] = useState('')
+  const [signupPassword, setSignupPassword] = useState('')
+  const [signupError, setSignupError] = useState<string | null>(null)
+  const [signupBusy, setSignupBusy] = useState(false)
 
   const [needsSetup, setNeedsSetup] = useState(false)
   const [setupName, setSetupName] = useState('')
@@ -352,6 +372,26 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
     setBusy(false)
     if (err) setError(true)
     else onSuccess()
+  }
+
+  async function onSignupSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (signupBusy) return
+    setSignupBusy(true)
+    setSignupError(null)
+    try {
+      const res = await registerParentRequest(signupName, signupEmail, signupPassword)
+      setSession(res.token, res.user)
+      onSuccess()
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 409) {
+        setSignupError(t.signupEmailExists)
+      } else {
+        setSignupError(t.signupError)
+      }
+    } finally {
+      setSignupBusy(false)
+    }
   }
 
   if (needsSetup) {
@@ -428,63 +468,202 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
   }
 
   return (
-    <section className="login-layout"><aside className="login-story"><BrandMark /><p className="eyebrow">{t.brandCaption}</p><h2>{t.careTogether}</h2><p>{t.loginIntro}</p><GardenArt /></aside><div className="panel login-panel">
-      <span className="login-symbol"><Icon name="leaf" size={25} /></span><h1 tabIndex={-1}>{t.loginTitle}</h1><p className="panel-sub">{t.loginDescription}</p>
-      <form className="login-form" onSubmit={onSubmit}>
-        <label>
-          {t.loginEmail}
-          <input
-            type="email"
-            disabled={busy}
-            autoComplete="username"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </label>
-        <label>
-          {t.loginPassword}
-          <span className="password-field"><input
-            type={showPassword ? 'text' : 'password'}
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            disabled={busy}
-          /><button type="button" className="password-toggle" aria-label={showPassword ? t.hidePassword : t.showPassword} aria-pressed={showPassword} onClick={() => setShowPassword((shown) => !shown)}><Icon name="eye" /></button></span>
-        </label>
-        {error && <p role="alert" className="form-error">{t.loginError}</p>}
-        <button type="submit" className="btn primary" disabled={busy}>
-          {busy ? t.attendanceSaving : t.loginSubmit}
-        </button>
-      </form>
-      {SHOW_DEMO && (
-        <div className="demo-accounts">
-          <p className="hint">{t.loginHint}</p>
-          {DEMO.map((d) => (
-            <button
-              key={d.email}
-              type="button"
-              className="demo-chip"
-              disabled={busy}
-              onClick={() => {
-                setEmail(d.email)
-                setPassword(d.password)
-              }}
-            >
-              <Icon name={d.roleKey === 'roleParent' ? 'children' : d.roleKey === 'roleTeacher' ? 'leaf' : d.roleKey === 'roleSuperAdmin' ? 'superadmin' : 'dashboard'} /><span><strong>{d.name || t[d.roleKey]}</strong><small>{d.email}</small></span><Icon name="arrow" size={16} />
-            </button>
-          ))}
+    <section className="login-layout">
+      <aside className="login-story">
+        <BrandMark />
+        <p className="eyebrow">{t.brandCaption}</p>
+        <h2>{mode === 'signup' ? t.signupTitle : t.careTogether}</h2>
+        <p>{mode === 'signup' ? t.signupDescription : t.loginIntro}</p>
+        <GardenArt />
+      </aside>
+      <div className="panel login-panel">
+        <div className="auth-mode-toggle" role="tablist" aria-label={`${t.authTabLogin} / ${t.authTabSignup}`}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'login'}
+            className={`auth-tab-btn ${mode === 'login' ? 'active' : ''}`}
+            onClick={() => { setMode('login'); setError(false); setSignupError(null) }}
+          >
+            {t.authTabLogin}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'signup'}
+            className={`auth-tab-btn ${mode === 'signup' ? 'active' : ''}`}
+            onClick={() => { setMode('signup'); setError(false); setSignupError(null) }}
+          >
+            {t.authTabSignup}
+          </button>
         </div>
-      )}
-      <div className="login-help-card" style={{ marginTop: '20px', padding: '14px 16px', borderRadius: '10px', background: 'var(--kd-surface-alt, #f7faf5)', border: '1px solid var(--kd-border, #e2ead6)', fontSize: '13px', color: 'var(--kd-muted, #556b5b)', lineHeight: '1.45', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
-        <p style={{ margin: 0, fontWeight: 600, color: 'var(--kd-text, #26382b)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Icon name="children" size={16} />
-          {t.parentAccessNotice}
-        </p>
-        <p style={{ margin: '6px 0 0', fontSize: '12px' }}>{t.parentAccessContact}</p>
+
+        <span className="login-symbol"><Icon name={mode === 'signup' ? 'children' : 'leaf'} size={25} /></span>
+        <h1 tabIndex={-1}>{mode === 'signup' ? t.signupTitle : t.loginTitle}</h1>
+        <p className="panel-sub">{mode === 'signup' ? t.signupDescription : t.loginDescription}</p>
+
+        {mode === 'login' ? (
+          <>
+            <form className="login-form" onSubmit={onSubmit}>
+              <label>
+                {t.loginEmail}
+                <input
+                  type="email"
+                  disabled={busy}
+                  autoComplete="username"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                {t.loginPassword}
+                <span className="password-field">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    disabled={busy}
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    aria-label={showPassword ? t.hidePassword : t.showPassword}
+                    aria-pressed={showPassword}
+                    onClick={() => setShowPassword((shown) => !shown)}
+                  >
+                    <Icon name="eye" />
+                  </button>
+                </span>
+              </label>
+              {error && <p role="alert" className="form-error">{t.loginError}</p>}
+              <button type="submit" className="btn primary" disabled={busy}>
+                {busy ? t.attendanceSaving : t.loginSubmit}
+              </button>
+            </form>
+
+            <div className="auth-switch" style={{ marginTop: '16px', textAlign: 'center', fontSize: '13.5px', color: 'var(--kd-muted)' }}>
+              <span>{t.dontHaveAccount} </span>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => { setMode('signup'); setError(false); setSignupError(null) }}
+                style={{ background: 'none', border: 'none', padding: '0', color: 'var(--kd-primary, #1a5c45)', fontWeight: 650, cursor: 'pointer', textDecoration: 'underline', minHeight: '40px', display: 'inline-flex', alignItems: 'center' }}
+              >
+                {t.switchToSignup}
+              </button>
+            </div>
+
+            {SHOW_DEMO && (
+              <div className="demo-accounts">
+                <p className="hint">{t.loginHint}</p>
+                {DEMO.map((d) => (
+                  <button
+                    key={d.email}
+                    type="button"
+                    className="demo-chip"
+                    disabled={busy}
+                    onClick={() => {
+                      setEmail(d.email)
+                      setPassword(d.password)
+                    }}
+                  >
+                    <Icon name={d.roleKey === 'roleParent' ? 'children' : d.roleKey === 'roleTeacher' ? 'leaf' : d.roleKey === 'roleSuperAdmin' ? 'superadmin' : 'dashboard'} />
+                    <span><strong>{d.name || t[d.roleKey]}</strong><small>{d.email}</small></span>
+                    <Icon name="arrow" size={16} />
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="login-help-card" style={{ marginTop: '20px', padding: '14px 16px', borderRadius: '10px', background: 'var(--kd-surface-alt, #f7faf5)', border: '1px solid var(--kd-border, #e2ead6)', fontSize: '13px', color: 'var(--kd-muted, #556b5b)', lineHeight: '1.45', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
+              <p style={{ margin: 0, fontWeight: 600, color: 'var(--kd-text, #26382b)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Icon name="children" size={16} />
+                {t.parentAccessNotice}
+              </p>
+              <p style={{ margin: '6px 0 0', fontSize: '12px' }}>{t.parentAccessContact}</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <form className="login-form" onSubmit={onSignupSubmit}>
+              <label>
+                {t.signupFullName}
+                <input
+                  type="text"
+                  disabled={signupBusy}
+                  autoComplete="name"
+                  value={signupName}
+                  onChange={(e) => setSignupName(e.target.value)}
+                  required
+                  minLength={2}
+                  placeholder={t.signupFullNamePlaceholder}
+                />
+              </label>
+              <label>
+                {t.signupEmail}
+                <input
+                  type="email"
+                  disabled={signupBusy}
+                  autoComplete="email"
+                  value={signupEmail}
+                  onChange={(e) => setSignupEmail(e.target.value)}
+                  required
+                  placeholder="parent@example.com"
+                />
+              </label>
+              <label>
+                {t.signupPassword}
+                <span className="password-field">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    value={signupPassword}
+                    onChange={(e) => setSignupPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    disabled={signupBusy}
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    aria-label={showPassword ? t.hidePassword : t.showPassword}
+                    aria-pressed={showPassword}
+                    onClick={() => setShowPassword((shown) => !shown)}
+                  >
+                    <Icon name="eye" />
+                  </button>
+                </span>
+              </label>
+              {signupError && <p role="alert" className="form-error">{signupError}</p>}
+              <button type="submit" className="btn primary" disabled={signupBusy}>
+                {signupBusy ? t.attendanceSaving : t.signupSubmit}
+              </button>
+            </form>
+
+            <div className="auth-switch" style={{ marginTop: '16px', textAlign: 'center', fontSize: '13.5px', color: 'var(--kd-muted)' }}>
+              <span>{t.alreadyHaveAccount} </span>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => { setMode('login'); setError(false); setSignupError(null) }}
+                style={{ background: 'none', border: 'none', padding: '0', color: 'var(--kd-primary, #1a5c45)', fontWeight: 650, cursor: 'pointer', textDecoration: 'underline', minHeight: '40px', display: 'inline-flex', alignItems: 'center' }}
+              >
+                {t.switchToLogin}
+              </button>
+            </div>
+
+            <div className="login-help-card" style={{ marginTop: '20px', padding: '14px 16px', borderRadius: '10px', background: 'var(--kd-surface-alt, #f7faf5)', border: '1px solid var(--kd-border, #e2ead6)', fontSize: '13px', color: 'var(--kd-muted, #556b5b)', lineHeight: '1.45', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
+              <p style={{ margin: 0, fontWeight: 600, color: 'var(--kd-text, #26382b)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Icon name="children" size={16} />
+                {t.parentSignupNotice}
+              </p>
+            </div>
+          </>
+        )}
       </div>
-    </div></section>
+    </section>
   )
 }
 

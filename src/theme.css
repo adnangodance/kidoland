@@ -40,8 +40,8 @@ p { overflow-wrap: anywhere; }
 .skip-link { position: fixed; top: -100px; left: 16px; z-index: 100; background: var(--kd-green); color: white; border-radius: 8px; padding: 12px 20px; }
 .skip-link:focus { top: 12px; }
 .brand { gap: 9px; color: var(--kd-green); padding: 0; font-size: 21px; letter-spacing: -1.2px; font-weight: 700; }
-.brand-mark { display: flex; width: 30px; height: 30px; color: var(--kd-green); }
-.brand-mark svg { width: 100%; height: 100%; }
+.brand-mark { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; color: var(--kd-green); }
+.brand-mark svg, .brand-mark img { width: 100%; height: 100%; object-fit: contain; }
 .brand-dot { color: #c89c52; margin-left: -9px; }
 .nav { min-height: 64px; padding: 9px 36px; gap: 16px; background: var(--kd-surface); border-bottom: 1px solid var(--kd-line); box-shadow: none; }
 .nav-actions { gap: 16px; margin-left: auto; flex-wrap: nowrap; }
@@ -285,7 +285,7 @@ legend { color: var(--kd-green); font-size: 12px; padding: 0 7px; }
 .footer p { margin: 0; }
 .footer-mark { display: flex; }
 .loading { color: var(--kd-green); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 18px; }
-.loading > svg { width: 45px; height: 45px; }
+.loading > svg, .loading > img { width: 45px; height: 45px; object-fit: contain; }
 /* Public welcome and sign-in. Illustration is decorative and rendered locally. */
 .public-app .nav { max-width: none; padding-left: max(24px, calc((100vw - 1160px) / 2)); padding-right: max(24px, calc((100vw - 1160px) / 2)); }
 .hero { max-width: 1160px; padding: 70px 24px 60px; grid-template-columns: 1.05fr 1fr; gap: 45px; align-items: center; }
@@ -333,7 +333,7 @@ legend { color: var(--kd-green); font-size: 12px; padding: 0 7px; }
 .landing-invitation .btn { flex-shrink: 0; }
 .login-layout { display: grid; grid-template-columns: 1fr 1fr; max-width: 950px; margin: 60px auto 70px; border: 1px solid var(--kd-line); background: white; border-radius: 8px; overflow: hidden; }
 .login-story { background: #eaf0df; padding: 42px 38px 0; position: relative; overflow: hidden; display: flex; flex-direction: column; }
-.login-story > svg:first-child { color: var(--kd-green); width: 48px; height: 48px; margin-bottom: 35px; }
+.login-story > svg:first-child, .login-story > img:first-child { color: var(--kd-green); width: 48px; height: auto; max-height: 48px; object-fit: contain; margin-bottom: 35px; }
 .login-story .eyebrow { font-size: 9px; margin-bottom: 15px; }
 .login-story h2 { font-size: 37px; line-height: 1.15; font-weight: 600; margin: 0 0 18px; }
 .login-story > p:not(.eyebrow) { font-size: 13px; color: var(--kd-ink-soft); line-height: 1.8; }
@@ -1820,7 +1820,7 @@ kbd { font-family: inherit; font-size: 10px; color: #74786c; }
 .product-preview-body aside > div { display: flex; gap: 9px; align-items: center; padding: 12px; font-size: 11px; color: #808777; }
 .product-preview-body aside > .selected { background: #e9ede3; color: #4a5740; border-radius: 5px; }
 .product-preview-body aside .preview-brand { font-weight: 650; font-size: 16px; color: #37452e; margin-bottom: 19px; }
-.preview-brand > svg { width: 25px; height: 25px; }
+.preview-brand > svg, .preview-brand > img { width: 25px; height: 25px; object-fit: contain; }
 .preview-workspace { padding: 30px 34px; min-width: 0; }
 .preview-greeting { display: flex; align-items: center; gap: 8px; color: #74786c; font-size: 11px; margin: 0 0 10px; }
 .preview-greeting > svg { color: #bba074; }
