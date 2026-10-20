@@ -1,6 +1,6 @@
 /* Classroom Moments & Learning Activity Timeline with Photo Consent Filtering */
 /* eslint-disable react/set-state-in-effect, react-hooks/exhaustive-deps */
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, useRef, type FormEvent } from 'react'
 import {
   listMoments,
   createMoment,
@@ -17,6 +17,7 @@ import { useI18n } from './i18n/language-context'
 import { localCalendarDate } from './attendance-date'
 import { displayDate, useAlive } from './pilot-utils'
 import ChildAvatar from './ChildAvatar'
+import { compressImage, MAX_IMAGE_FILE_SIZE } from './utils/imageCompressor'
 
 const learningAreas: { value: LearningArea; labelKey: keyof typeof import('./i18n/translations').translations['en']; icon: string }[] = [
   { value: 'art', labelKey: 'areaArt', icon: '🎨' },
@@ -57,6 +58,40 @@ export default function Moments() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [feedback, setFeedback] = useState('')
+  const [compressingPhoto, setCompressingPhoto] = useState(false)
+  const momentCameraRef = useRef<HTMLInputElement>(null)
+  const momentGalleryRef = useRef<HTMLInputElement>(null)
+
+  const handleMomentPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setSaveError(t.imageInvalid)
+      return
+    }
+    if (file.size > MAX_IMAGE_FILE_SIZE) {
+      setSaveError(t.imageTooLarge)
+      return
+    }
+    setSaveError('')
+    setCompressingPhoto(true)
+    try {
+      const result = await compressImage(file, {
+        maxDimension: 1280,
+        quality: 0.82,
+        maxFileSize: MAX_IMAGE_FILE_SIZE,
+      })
+      if (alive.current) {
+        setDraft((d) => ({ ...d, imageUrl: result.dataUrl }))
+      }
+    } catch {
+      if (alive.current) setSaveError(t.imageInvalid)
+    } finally {
+      if (alive.current) setCompressingPhoto(false)
+      if (momentCameraRef.current) momentCameraRef.current.value = ''
+      if (momentGalleryRef.current) momentGalleryRef.current.value = ''
+    }
+  }
 
   const isStaff = user?.role === 'teacher' || user?.role === 'director'
 
@@ -310,15 +345,64 @@ export default function Moments() {
               />
             </label>
 
-            <label className="form-full">
-              <span>{t.momentImage}</span>
-              <input
-                type="url"
-                placeholder={t.momentImagePlaceholder}
-                value={draft.imageUrl || ''}
-                onChange={(e) => setDraft({ ...draft, imageUrl: e.target.value })}
-              />
-            </label>
+            <div className="form-full">
+              <label>
+                <span>{t.momentImage}</span>
+                <input
+                  type="url"
+                  placeholder={t.momentImagePlaceholder}
+                  value={draft.imageUrl || ''}
+                  onChange={(e) => setDraft({ ...draft, imageUrl: e.target.value })}
+                />
+              </label>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' }}>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  disabled={saving || compressingPhoto}
+                  onClick={() => momentCameraRef.current?.click()}
+                  style={{ fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <span aria-hidden="true">📷</span>
+                  <span>{t.takePhotoWithCamera}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  disabled={saving || compressingPhoto}
+                  onClick={() => momentGalleryRef.current?.click()}
+                  style={{ fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <span aria-hidden="true">🖼️</span>
+                  <span>{t.chooseFromGallery}</span>
+                </button>
+                <input
+                  ref={momentCameraRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: 'none' }}
+                  onChange={handleMomentPhoto}
+                  tabIndex={-1}
+                  aria-hidden="true"
+                />
+                <input
+                  ref={momentGalleryRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={handleMomentPhoto}
+                  tabIndex={-1}
+                  aria-hidden="true"
+                />
+              </div>
+              {compressingPhoto && (
+                <p className="hint" style={{ color: 'var(--kd-accent)', display: 'flex', alignItems: 'center', gap: '6px', margin: '4px 0' }}>
+                  <span>⏳</span>
+                  <span>{t.imageCompressing}</span>
+                </p>
+              )}
+            </div>
           </div>
 
           <label className="form-full">

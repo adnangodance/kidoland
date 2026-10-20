@@ -269,30 +269,166 @@ function Shell() {
   )
 }
 
-function GardenArt() {
-  return <svg className="garden-art" viewBox="0 0 480 380" fill="none" aria-hidden="true" focusable="false">
-    <circle cx="255" cy="165" r="140" fill="#e2ead6" /><circle cx="320" cy="100" r="46" fill="#f1ca75" />
-    <path d="M55 340c45-130 146-150 233-94 45-68 117-60 158 94H55Z" fill="#cadbbd" />
-    <path d="M90 343c60-72 170-61 273 0H90Z" fill="#9bb78f" />
-    <path d="M160 313V166M161 229c-54 2-73-28-67-62 42 0 70 19 67 62ZM161 204c0-53 37-76 81-71 0 42-30 74-81 71Z" fill="#53765b" />
-    <path d="M371 316V231M371 270c-32 0-44-18-41-40 26 0 44 15 41 40ZM371 251c-1-33 23-47 50-43 0 26-19 45-50 43Z" fill="#658366" />
-    <path d="M284 344v-56" stroke="#53765b" strokeWidth="6" />
-    <circle cx="282" cy="270" r="17" fill="#de9075" /><circle cx="263" cy="288" r="17" fill="#de9075" /><circle cx="299" cy="288" r="17" fill="#de9075" /><circle cx="282" cy="303" r="17" fill="#de9075" /><circle cx="282" cy="287" r="12" fill="#fae6ac" />
-    <path d="m79 90 5-12 5 12 12 5-12 5-5 12-5-12-12-5 12-5ZM397 144l3-8 3 8 8 3-8 3-3 8-3-8-8-3 8-3Z" fill="#b38b47" />
-    <path d="M248 69c5-8 12-8 17 0 5-8 12-8 17 0" stroke="#69816a" strokeWidth="3" strokeLinecap="round" />
-  </svg>
-}
 
 function Home({ onLogin }: { onLogin: (mode?: 'login' | 'signup') => void }) {
   const { t } = useI18n()
   return <>
     <section className="hero">
-      <div className="hero-copy"><p className="eyebrow"><Icon name="sun" size={17} />{t.brandCaption}</p><h1 tabIndex={-1}>{t.heroTitle}</h1><p className="lead">{t.heroSub}</p><div className="hero-cta"><button type="button" className="btn primary hero-signup-btn" onClick={() => onLogin('signup')}>{t.ctaSignUp}<Icon name="arrow" /></button><button type="button" className="btn ghost hero-login-btn" onClick={() => onLogin('login')}>{t.ctaStart}</button><span className="hero-language"><Icon name="check" size={16} />{t.featureLang}</span></div><p className="hero-footnote">{t.careTogether}</p></div>
+      <div className="hero-copy">
+        <div className="hero-badge">
+          <img src="/brand/mascot-yellow-star.png" alt="" className="hero-badge-icon" />
+          <span>{t.brandCaption}</span>
+        </div>
+        <h1 tabIndex={-1}>{t.heroTitle}</h1>
+        <p className="lead">{t.heroSub}</p>
+        <div className="hero-cta">
+          <button type="button" className="btn primary hero-signup-btn" onClick={() => onLogin('signup')}>{t.ctaSignUp}<Icon name="arrow" /></button>
+          <button type="button" className="btn ghost hero-login-btn" onClick={() => onLogin('login')}>{t.ctaStart}</button>
+          <span className="hero-language"><Icon name="check" size={16} />{t.featureLang}</span>
+        </div>
+        <div className="hero-perks">
+          <span><Icon name="check" size={14} />{t.badgeAttendanceRate}</span>
+          <span><Icon name="check" size={14} />{t.badgeDailyReport}</span>
+        </div>
+        <p className="hero-footnote">{t.careTogether}</p>
+      </div>
+      <div className="hero-showcase">
+        <div className="hero-image-wrap">
+          <img src="/brand/hero-child-boy.png" alt="Happy child at Kiddo Land" className="hero-main-img" />
+          <div className="hero-floating-stat">
+            <img src="/brand/mascot-orange-wink.png" alt="" className="floating-stat-avatar" />
+            <div>
+              <strong>{t.attendancePresent} · 98%</strong>
+              <small>{t.brandCaption}</small>
+            </div>
+          </div>
+          <div className="hero-floating-report">
+            <div className="floating-report-header">
+              <span className="sample-avatar sample-avatar-0">AK</span>
+              <div>
+                <strong>Arta Krasniqi</strong>
+                <small>{t.reportsMoodVal}</small>
+              </div>
+              <span className="floating-report-check"><Icon name="check" size={12} /></span>
+            </div>
+            <div className="floating-report-note">
+              <p>"{t.reportsNoteVal}"</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* Brand Identity Pillars Gallery */}
+    <section className="landing-section brand-pillars-section">
+      <div className="section-heading">
+        <p className="eyebrow">{t.littleMoments}</p>
+        <h2>{t.brandPillarsHeading}</h2>
+        <p className="section-sub">{t.brandPillarsSub}</p>
+      </div>
+      <div className="brand-pillars-grid">
+        <article className="brand-pillar-card pillar-coral">
+          <div className="pillar-media">
+            <img src="/brand/card-kids-crafts.png" alt={t.brandCardMemoriesTitle} />
+            <img src="/brand/mascot-orange-wink.png" alt="" className="pillar-mascot" />
+          </div>
+          <div className="pillar-body">
+            <h3>{t.brandCardMemoriesTitle}</h3>
+            <p>{t.brandCardMemoriesSub}</p>
+          </div>
+        </article>
+        <article className="brand-pillar-card pillar-green">
+          <div className="pillar-media">
+            <img src="/brand/card-green-imagination.png" alt={t.brandCardImaginationTitle} />
+            <img src="/brand/mascot-green-curious.png" alt="" className="pillar-mascot" />
+          </div>
+          <div className="pillar-body">
+            <h3>{t.brandCardImaginationTitle}</h3>
+            <p>{t.brandCardImaginationSub}</p>
+          </div>
+        </article>
+        <article className="brand-pillar-card pillar-purple">
+          <div className="pillar-media">
+            <img src="/brand/card-purple-joy.png" alt={t.brandCardJoyTitle} />
+            <img src="/brand/mascot-purple-calm.png" alt="" className="pillar-mascot" />
+          </div>
+          <div className="pillar-body">
+            <h3>{t.brandCardJoyTitle}</h3>
+            <p>{t.brandCardJoySub}</p>
+          </div>
+        </article>
+        <article className="brand-pillar-card pillar-blue">
+          <div className="pillar-media">
+            <img src="/brand/card-blue-bright.png" alt={t.brandCardBrightTitle} />
+            <img src="/brand/mascot-blue-love.png" alt="" className="pillar-mascot" />
+          </div>
+          <div className="pillar-body">
+            <h3>{t.brandCardBrightTitle}</h3>
+            <p>{t.brandCardBrightSub}</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    {/* Live Workspace Preview */}
+    <section className="landing-section preview-section">
+      <div className="section-heading">
+        <p className="eyebrow">{t.exampleWorkspace}</p>
+        <h2>{t.dayOverview}</h2>
+      </div>
       <WorkspacePreview />
     </section>
-    <section className="landing-section"><div className="section-heading"><p className="eyebrow">{t.everyDayTitle}</p><h2>{t.everyDayBody}</h2></div><div className="features">{([{ title: t.featureReports, body: t.featureReportsBody, icon: 'reports' }, { title: t.featurePayments, body: t.featurePaymentsBody, icon: 'payments' }, { title: t.featureLang, body: t.featureLangBody, icon: 'messages' }, { title: t.featureSafety, body: t.featureSafetyBody, icon: 'incidents' }] as const).map((feature) => <article key={feature.title}><span className="feature-icon"><Icon name={feature.icon} size={23} /></span><h3>{feature.title}</h3><p>{feature.body}</p></article>)}</div></section>
-    <section className="roles"><article><Icon name="children" size={28} /><h2>{t.forParents}</h2><p>{t.forParentsBody}</p></article><article><Icon name="leaf" size={28} /><h2>{t.forStaff}</h2><p>{t.forStaffBody}</p></article></section>
-    <section className="landing-invitation"><div><h2>{t.careTogether}</h2><p>{t.loginIntro}</p></div><div className="landing-invitation-actions"><button type="button" className="btn primary" onClick={() => onLogin('signup')}>{t.ctaSignUp}<Icon name="arrow" /></button><button type="button" className="btn ghost" onClick={() => onLogin('login')}>{t.ctaStart}</button></div></section>
+
+    {/* Everyday Features Grid */}
+    <section className="landing-section">
+      <div className="section-heading">
+        <p className="eyebrow">{t.everyDayTitle}</p>
+        <h2>{t.everyDayBody}</h2>
+      </div>
+      <div className="features">
+        {([
+          { title: t.featureReports, body: t.featureReportsBody, icon: 'reports', colorClass: 'feature-red' },
+          { title: t.featurePayments, body: t.featurePaymentsBody, icon: 'payments', colorClass: 'feature-orange' },
+          { title: t.featureLang, body: t.featureLangBody, icon: 'messages', colorClass: 'feature-purple' },
+          { title: t.featureSafety, body: t.featureSafetyBody, icon: 'incidents', colorClass: 'feature-blue' }
+        ] as const).map((feature) => (
+          <article key={feature.title} className={feature.colorClass}>
+            <span className="feature-icon"><Icon name={feature.icon} size={23} /></span>
+            <h3>{feature.title}</h3>
+            <p>{feature.body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    {/* Roles Section */}
+    <section className="roles">
+      <article className="role-parents">
+        <div className="role-icon-wrap"><Icon name="children" size={28} /></div>
+        <h2>{t.forParents}</h2>
+        <p>{t.forParentsBody}</p>
+      </article>
+      <article className="role-staff">
+        <div className="role-icon-wrap"><Icon name="leaf" size={28} /></div>
+        <h2>{t.forStaff}</h2>
+        <p>{t.forStaffBody}</p>
+      </article>
+    </section>
+
+    {/* Invitation CTA */}
+    <section className="landing-invitation">
+      <div className="landing-invitation-content">
+        <img src="/brand/mascot-yellow-star.png" alt="" className="invitation-mascot" />
+        <div>
+          <h2>{t.careTogether}</h2>
+          <p>{t.loginIntro}</p>
+        </div>
+      </div>
+      <div className="landing-invitation-actions">
+        <button type="button" className="btn primary" onClick={() => onLogin('signup')}>{t.ctaSignUp}<Icon name="arrow" /></button>
+        <button type="button" className="btn ghost" onClick={() => onLogin('login')}>{t.ctaStart}</button>
+      </div>
+    </section>
   </>
 }
 
@@ -398,11 +534,15 @@ function Login({ onSuccess, initialMode = 'login' }: { onSuccess: () => void; in
     return (
       <section className="login-layout">
         <aside className="login-story">
-          <BrandMark />
+          <div className="login-story-brand">
+            <img src="/brand/logo-purple.png" alt="Kiddo Land" className="login-story-logo" />
+          </div>
           <p className="eyebrow"><Icon name="sun" size={17} />{t.brandCaption}</p>
           <h2>{t.setupAdminTitle}</h2>
           <p>{t.setupAdminDescription}</p>
-          <GardenArt />
+          <div className="login-story-illustration">
+            <img src="/brand/brand-illustration-rainbow.png" alt="" className="login-story-art" />
+          </div>
         </aside>
         <div className="panel login-panel">
           <span className="login-symbol"><Icon name="superadmin" size={25} /></span>
@@ -470,11 +610,15 @@ function Login({ onSuccess, initialMode = 'login' }: { onSuccess: () => void; in
   return (
     <section className="login-layout">
       <aside className="login-story">
-        <BrandMark />
+        <div className="login-story-brand">
+          <img src="/brand/logo-purple.png" alt="Kiddo Land" className="login-story-logo" />
+        </div>
         <p className="eyebrow">{t.brandCaption}</p>
         <h2>{mode === 'signup' ? t.signupTitle : t.careTogether}</h2>
         <p>{mode === 'signup' ? t.signupDescription : t.loginIntro}</p>
-        <GardenArt />
+        <div className="login-story-illustration">
+          <img src="/brand/brand-illustration-rainbow.png" alt="" className="login-story-art" />
+        </div>
       </aside>
       <div className="panel login-panel">
         <div className="auth-mode-toggle" role="tablist" aria-label={`${t.authTabLogin} / ${t.authTabSignup}`}>

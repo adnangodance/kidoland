@@ -34,6 +34,7 @@ export function Documents() {
   const { token, user } = useAuth()
   const { t } = useI18n()
   const alive = useRef(true)
+  const docCameraRef = useRef<HTMLInputElement>(null)
 
   const [children, setChildren] = useState<Child[]>([])
   const [documents, setDocuments] = useState<ChildDocument[]>([])
@@ -582,6 +583,27 @@ export function Documents() {
                   className="input-file"
                   required
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={() => docCameraRef.current?.click()}
+                    style={{ fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <span aria-hidden="true">📷</span>
+                    <span>{t.takePhotoWithCamera}</span>
+                  </button>
+                  <input
+                    ref={docCameraRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    style={{ display: 'none' }}
+                    onChange={handleFileChange}
+                    tabIndex={-1}
+                    aria-hidden="true"
+                  />
+                </div>
               </div>
 
               <div className="form-group">

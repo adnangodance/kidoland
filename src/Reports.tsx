@@ -126,6 +126,7 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
   const alive = useAlive()
   const generation = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
   const [children, setChildren] = useState<Child[]>([])
   const [childId, setChildId] = useState(initialChildId || '')
   const [date, setDate] = useState(() => initialDate || localCalendarDate())
@@ -242,6 +243,7 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
     const version = ++generation.current
     setReports([]); setDraft(empty); setError(''); setImageError(''); setSaved(false); setCompressStats(null); setCompressingImage(false)
     if (fileInputRef.current) fileInputRef.current.value = ''
+    if (cameraInputRef.current) cameraInputRef.current.value = ''
     if (!rosterReady || !token) return
     if (!validDate(date)) { setLoading(false); return }
     setLoading(true)
@@ -256,6 +258,7 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
     generation.current++
     setReports([]); setDraft(empty); setSaved(false); setError(''); setImageError(''); setLoading(true); setCompressStats(null); setCompressingImage(false)
     if (fileInputRef.current) fileInputRef.current.value = ''
+    if (cameraInputRef.current) cameraInputRef.current.value = ''
     setChildId(nextChild); setDate(nextDate)
   }
   async function handleImage(e: React.ChangeEvent<HTMLInputElement>) {
@@ -265,12 +268,14 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
       setImageError(t.imageInvalid)
       setCompressStats(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
+      if (cameraInputRef.current) cameraInputRef.current.value = ''
       return
     }
     if (file.size > MAX_IMAGE_FILE_SIZE) {
       setImageError(t.imageTooLarge)
       setCompressStats(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
+      if (cameraInputRef.current) cameraInputRef.current.value = ''
       return
     }
     setImageError('')
@@ -299,6 +304,7 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
       }
       setCompressStats(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
+      if (cameraInputRef.current) cameraInputRef.current.value = ''
     } finally {
       if (alive.current) setCompressingImage(false)
     }
@@ -309,6 +315,7 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
     setCompressStats(null)
     setImageError('')
     if (fileInputRef.current) fileInputRef.current.value = ''
+    if (cameraInputRef.current) cameraInputRef.current.value = ''
   }
   async function save(event: FormEvent) {
     event.preventDefault()
@@ -321,6 +328,7 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
         setReports([report])
         setSaved(true)
         if (fileInputRef.current) fileInputRef.current.value = ''
+        if (cameraInputRef.current) cameraInputRef.current.value = ''
       }
     } catch { if (alive.current && version === generation.current) setError('save') }
     finally { if (alive.current) setBusy(false) }
@@ -629,6 +637,29 @@ export default function Reports({ initialChildId, initialDate }: { initialChildI
         <div className="editor-section"><h3><span>03</span>{t.reportNoteTitle}</h3><label>{t.reportsNote}<textarea rows={4} maxLength={5000} value={draft.note} onChange={(e) => { setSaved(false); setDraft({ ...draft, note: e.target.value }) }} /></label></div>
         <div className="editor-section"><h3><span>04</span>{t.reportPhotoTitle}</h3>
         <label>{t.reportPhoto}<input ref={fileInputRef} type="file" accept="image/*" disabled={busy || compressingImage} onChange={handleImage} /></label>
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          disabled={busy || compressingImage}
+          onChange={handleImage}
+          style={{ display: 'none' }}
+          tabIndex={-1}
+          aria-hidden="true"
+        />
+        <div className="photo-actions-row" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', margin: '4px 0 8px 0' }}>
+          <button
+            type="button"
+            className="btn ghost photo-camera-btn"
+            disabled={busy || compressingImage}
+            onClick={() => cameraInputRef.current?.click()}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
+          >
+            <span aria-hidden="true">📷</span>
+            <span>{t.takePhotoWithCamera}</span>
+          </button>
+        </div>
         {compressingImage && (
           <p className="hint image-compressing-hint" style={{ color: 'var(--kd-accent)', display: 'flex', alignItems: 'center', gap: '6px', margin: '4px 0' }}>
             <span>⏳</span>
